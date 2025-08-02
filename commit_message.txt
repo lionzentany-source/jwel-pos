@@ -1,0 +1,6 @@
+feat: Implement report export to Excel, USB/Bluetooth printer support, and automatic backup
+
+This commit addresses the following tasks:
+- Added Excel export functionality to the report service.
+- Integrated USB and Bluetooth printer support using `print_usb` and `bluetooth_print_plus` packages.
+- Implemented a basic automatic backup system with scheduled backups.

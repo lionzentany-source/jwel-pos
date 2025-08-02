@@ -9,15 +9,21 @@ import '../providers/category_provider.dart';
 import '../providers/material_provider.dart';
 import '../providers/settings_provider.dart';
 import 'link_rfid_screen.dart';
+import 'edit_item_screen.dart';
 
-class ItemDetailsScreen extends ConsumerWidget {
+class ItemDetailsScreen extends ConsumerStatefulWidget {
   final int itemId;
 
   const ItemDetailsScreen({super.key, required this.itemId});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final itemAsync = ref.watch(itemByIdProvider(itemId));
+  ConsumerState<ItemDetailsScreen> createState() => _ItemDetailsScreenState();
+}
+
+class _ItemDetailsScreenState extends ConsumerState<ItemDetailsScreen> {
+  @override
+  Widget build(BuildContext context) {
+    final itemAsync = ref.watch(itemByIdProvider(widget.itemId));
     final goldPriceAsync = ref.watch(goldPriceProvider);
 
     return itemAsync.when(
@@ -34,7 +40,7 @@ class ItemDetailsScreen extends ConsumerWidget {
           actions: [
             CupertinoButton(
               padding: EdgeInsets.zero,
-              onPressed: () => _showOptionsMenu(context, ref, item),
+              onPressed: () => _showOptionsMenu(context, item),
               child: const Icon(CupertinoIcons.ellipsis),
             ),
           ],
@@ -121,22 +127,33 @@ class ItemDetailsScreen extends ConsumerWidget {
         color: CupertinoColors.systemGrey6,
         borderRadius: BorderRadius.circular(12),
       ),
-      child: item.imagePath != null
-          ? ClipRRect(
-              borderRadius: BorderRadius.circular(12),
-              child: Image.file(
-                File(item.imagePath!),
-                fit: BoxFit.cover,
-                width: double.infinity,
-              ),
-            )
-          : const Center(
-              child: Icon(
-                CupertinoIcons.cube_box,
-                size: 80,
-                color: CupertinoColors.systemGrey3,
-              ),
+      child: Builder(
+        builder: (context) {
+          try {
+            final p = item.imagePath;
+            if (p != null && p.isNotEmpty) {
+              final f = File(p);
+              if (f.existsSync()) {
+                return ClipRRect(
+                  borderRadius: BorderRadius.circular(12),
+                  child: Image.file(
+                    f,
+                    fit: BoxFit.cover,
+                    width: double.infinity,
+                  ),
+                );
+              }
+            }
+          } catch (_) {}
+          return const Center(
+            child: Icon(
+              CupertinoIcons.cube_box,
+              size: 80,
+              color: CupertinoColors.systemGrey3,
             ),
+          );
+        },
+      ),
     );
   }
 
@@ -148,7 +165,7 @@ class ItemDetailsScreen extends ConsumerWidget {
         borderRadius: BorderRadius.circular(12),
         boxShadow: [
           BoxShadow(
-            color: CupertinoColors.systemGrey.withOpacity(0.1),
+            color: CupertinoColors.systemGrey.withValues(alpha: 0.1),
             blurRadius: 8,
             offset: const Offset(0, 2),
           ),
@@ -205,13 +222,26 @@ class ItemDetailsScreen extends ConsumerWidget {
   }
 
   Widget _buildPriceCard(Item item, double goldPrice) {
-    final totalPrice = item.calculateTotalPrice(goldPrice);
-    final materialPrice = item.weightGrams * goldPrice;
+    // الحصول على سعر المادة الخاص إن وجد
+    double? materialPrice;
+    final materials = ref.watch(materialNotifierProvider).maybeWhen(
+          data: (list) => list,
+          orElse: () => null,
+        );
+    if (materials != null) {
+      final mat = materials.firstWhere(
+        (m) => m.id == item.materialId,
+        orElse: () => materials.first,
+      );
+      if (mat.isVariable) materialPrice = mat.pricePerGram;
+    }
+  final totalPrice = item.calculateTotalPrice(goldPrice, materialSpecificPrice: materialPrice);
+  final baseMaterialPrice = item.weightGrams * (materialPrice ?? goldPrice);
 
     return _buildInfoCard('تفاصيل السعر', [
       _buildInfoRow(
         'سعر المادة الخام',
-        '${materialPrice.toStringAsFixed(2)} د.ل',
+  '${baseMaterialPrice.toStringAsFixed(2)} د.ل',
       ),
       _buildInfoRow('المصنعية', '${item.workmanshipFee} د.ل'),
       if (item.stonePrice > 0)
@@ -246,8 +276,8 @@ class ItemDetailsScreen extends ConsumerWidget {
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: item.status == ItemStatus.needsRfid
-            ? CupertinoColors.systemOrange.withOpacity(0.1)
-            : CupertinoColors.activeGreen.withOpacity(0.1),
+            ? CupertinoColors.systemOrange.withValues(alpha: 0.1)
+            : CupertinoColors.activeGreen.withValues(alpha: 0.1),
         borderRadius: BorderRadius.circular(12),
         border: Border.all(
           color: item.status == ItemStatus.needsRfid
@@ -307,7 +337,9 @@ class ItemDetailsScreen extends ConsumerWidget {
                     CupertinoPageRoute(
                       builder: (context) => LinkRfidScreen(item: item),
                     ),
-                  );
+                  ).then((_) {
+                    ref.invalidate(itemByIdProvider(widget.itemId));
+                  });
                 },
                 child: const Text('ربط بطاقة RFID'),
               ),
@@ -322,7 +354,7 @@ class ItemDetailsScreen extends ConsumerWidget {
     return '${date.day}/${date.month}/${date.year}';
   }
 
-  void _showOptionsMenu(BuildContext context, WidgetRef ref, Item item) {
+  void _showOptionsMenu(BuildContext context, Item item) {
     showCupertinoModalPopup(
       context: context,
       builder: (context) => CupertinoActionSheet(
@@ -331,7 +363,14 @@ class ItemDetailsScreen extends ConsumerWidget {
           CupertinoActionSheetAction(
             onPressed: () {
               Navigator.pop(context);
-              // سيتم إضافة شاشة تعديل الصنف في التحديث القادم
+              Navigator.push(
+                context,
+                CupertinoPageRoute(
+                  builder: (context) => EditItemScreen(item: item),
+                ),
+              ).then((_) {
+                ref.invalidate(itemByIdProvider(widget.itemId));
+              });
             },
             child: const Text('تعديل'),
           ),
@@ -344,7 +383,9 @@ class ItemDetailsScreen extends ConsumerWidget {
                   CupertinoPageRoute(
                     builder: (context) => LinkRfidScreen(item: item),
                   ),
-                );
+                ).then((_) {
+                  ref.invalidate(itemByIdProvider(widget.itemId));
+                });
               },
               child: const Text('ربط بطاقة RFID'),
             ),

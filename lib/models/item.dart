@@ -17,8 +17,9 @@ class Item {
   final int karat;
   final double workmanshipFee;
   final double stonePrice;
+  final double costPrice;
   final String? imagePath;
-  final String? rfidTag;
+  String? rfidTag; // Changed from final to mutable
   final ItemStatus status;
   final DateTime createdAt;
 
@@ -31,6 +32,7 @@ class Item {
     required this.karat,
     required this.workmanshipFee,
     this.stonePrice = 0.0,
+    this.costPrice = 0.0,
     this.imagePath,
     this.rfidTag,
     this.status = ItemStatus.needsRfid,
@@ -47,6 +49,7 @@ class Item {
       'karat': karat,
       'workmanship_fee': workmanshipFee,
       'stone_price': stonePrice,
+      'cost_price': costPrice,
       'image_path': imagePath,
       'rfid_tag': rfidTag,
       'status': status.name,
@@ -64,6 +67,7 @@ class Item {
       karat: map['karat']?.toInt() ?? 0,
       workmanshipFee: map['workmanship_fee']?.toDouble() ?? 0.0,
       stonePrice: map['stone_price']?.toDouble() ?? 0.0,
+      costPrice: map['cost_price']?.toDouble() ?? 0.0,
       imagePath: map['image_path'],
       rfidTag: map['rfid_tag'],
       status: ItemStatus.values.firstWhere(
@@ -74,9 +78,11 @@ class Item {
     );
   }
 
-  // حساب السعر النهائي بناءً على سعر الجرام الحالي
-  double calculateTotalPrice(double gramPrice) {
-    final materialPrice = weightGrams * gramPrice;
+  // حساب السعر النهائي بناءً على سعر الجرام للمواد
+  // gramPrice: السعر الافتراضي (للتوافق السابق) إذا لم يتوفر سعر خاص بالمادة
+  double calculateTotalPrice(double gramPrice, {double? materialSpecificPrice}) {
+    final effectivePrice = materialSpecificPrice ?? gramPrice;
+    final materialPrice = weightGrams * effectivePrice;
     return materialPrice + workmanshipFee + stonePrice;
   }
 
@@ -89,6 +95,7 @@ class Item {
     int? karat,
     double? workmanshipFee,
     double? stonePrice,
+    double? costPrice,
     String? imagePath,
     String? rfidTag,
     ItemStatus? status,
@@ -103,6 +110,7 @@ class Item {
       karat: karat ?? this.karat,
       workmanshipFee: workmanshipFee ?? this.workmanshipFee,
       stonePrice: stonePrice ?? this.stonePrice,
+      costPrice: costPrice ?? this.costPrice,
       imagePath: imagePath ?? this.imagePath,
       rfidTag: rfidTag ?? this.rfidTag,
       status: status ?? this.status,

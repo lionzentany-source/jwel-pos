@@ -1,15 +1,19 @@
 import 'package:flutter/cupertino.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'dart:ui';
 
-import '../widgets/adaptive_scaffold.dart';
+// ...existing code...
 import '../models/invoice.dart';
 import '../models/customer.dart';
 import '../models/cart_item.dart';
 import '../providers/cart_provider.dart';
 import '../providers/settings_provider.dart';
 import '../providers/print_provider.dart';
-import '../repositories/invoice_repository.dart';
-import '../repositories/customer_repository.dart';
+import '../services/printer_facade.dart';
+import '../providers/invoice_provider.dart';
+import '../providers/customer_provider.dart';
+import '../providers/item_provider.dart';
+import '../models/item.dart';
 
 class CheckoutScreen extends ConsumerStatefulWidget {
   const CheckoutScreen({super.key});
@@ -42,42 +46,67 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
     final cart = ref.watch(cartProvider);
     final currency = ref.watch(currencyProvider);
 
-    return AdaptiveScaffold(
-      title: 'إتمام البيع',
-      body: SingleChildScrollView(
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            // ملخص الطلب
-            _buildOrderSummary(cart, currency),
-
-            const SizedBox(height: 20),
-
-            // معلومات العميل
-            _buildCustomerSection(),
-
-            const SizedBox(height: 20),
-
-            // طريقة الدفع
-            _buildPaymentMethodSection(),
-
-            const SizedBox(height: 20),
-
-            // خصم إضافي
-            _buildDiscountSection(currency),
-
-            const SizedBox(height: 20),
-
-            // ملاحظات
-            _buildNotesSection(),
-
-            const SizedBox(height: 30),
-
-            // أزرار الإجراء
-            _buildActionButtons(cart),
-          ],
+    return Stack(
+      children: [
+        Positioned.fill(
+          child: BackdropFilter(
+            filter: ImageFilter.blur(sigmaX: 6, sigmaY: 6),
+            child: Container(
+              color: CupertinoColors.black.withValues(alpha: 0.05),
+            ),
+          ),
         ),
-      ),
+        Center(
+          child: Container(
+            constraints: const BoxConstraints(maxWidth: 500, maxHeight: 600),
+            padding: const EdgeInsets.all(24),
+            decoration: BoxDecoration(
+              color: CupertinoColors.systemBackground,
+              borderRadius: BorderRadius.circular(16),
+              boxShadow: [
+                BoxShadow(
+                  color: CupertinoColors.systemGrey.withValues(alpha: 0.2),
+                  blurRadius: 16,
+                  offset: const Offset(0, 4),
+                ),
+              ],
+            ),
+            child: Stack(
+              children: [
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 64),
+                  child: SingleChildScrollView(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        _buildOrderSummary(cart, currency),
+                        const SizedBox(height: 16),
+                        _buildCustomerSection(),
+                        const SizedBox(height: 16),
+                        _buildPaymentMethodSection(),
+                        const SizedBox(height: 16),
+                        _buildDiscountSection(currency),
+                        const SizedBox(height: 16),
+                        _buildNotesSection(),
+                      ],
+                    ),
+                  ),
+                ),
+                Positioned(
+                  left: 0,
+                  right: 0,
+                  bottom: 0,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                    color: CupertinoColors.systemBackground.withOpacity(0.95),
+                    child: _buildActionButtons(cart),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ],
     );
   }
 
@@ -259,7 +288,7 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
                             ? CupertinoColors.activeBlue
                             : CupertinoColors.label,
                         fontWeight: _selectedPaymentMethod == method
-                            ? FontWeight.w600
+                            ? FontWeight.bold
                             : FontWeight.normal,
                       ),
                     ),
@@ -386,8 +415,8 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
 
     try {
       final cart = ref.read(cartProvider);
-      final invoiceRepository = InvoiceRepository();
-      final customerRepository = CustomerRepository();
+      final invoiceRepository = ref.read(invoiceRepositoryProvider);
+      final customerRepository = ref.read(customerRepositoryProvider);
 
       // إنشاء عميل جديد إذا تم إدخال بيانات
       int? customerId;
@@ -422,6 +451,13 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
 
       // مسح السلة
       ref.read(cartProvider.notifier).clearCart();
+      // تحديث قائمة الأصناف لإزالة المباعة
+      try {
+        ref.invalidate(itemsProvider); // في حال وجود مزود للأصناف
+        ref.invalidate(itemsByStatusProvider(ItemStatus.inStock));
+        ref.invalidate(itemsByStatusProvider(ItemStatus.needsRfid));
+        ref.invalidate(inventoryStatsProvider);
+      } catch (_) {}
 
       if (mounted) {
         showCupertinoDialog(
@@ -479,75 +515,36 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
         '${now.year}${now.month.toString().padLeft(2, '0')}${now.day.toString().padLeft(2, '0')}';
 
     // الحصول على عدد الفواتير اليوم
-    final invoiceRepository = InvoiceRepository();
+    final invoiceRepository = ref.read(invoiceRepositoryProvider);
     final todayCount = await invoiceRepository.getTodayInvoiceCount();
 
     return 'INV$dateStr${(todayCount + 1).toString().padLeft(3, '0')}';
   }
 
   void _showPrintOptions(Invoice invoice, List<CartItem> items) {
-    showCupertinoModalPopup(
-      context: context,
-      builder: (context) => CupertinoActionSheet(
-        title: const Text('خيارات الطباعة'),
-        message: const Text('اختر نوع الطباعة المطلوب'),
-        actions: [
-          CupertinoActionSheetAction(
-            child: const Text('طباعة PDF'),
-            onPressed: () {
-              Navigator.pop(context);
-              _printInvoicePDF(invoice, items);
-            },
-          ),
-          CupertinoActionSheetAction(
-            child: const Text('طباعة حرارية'),
-            onPressed: () {
-              Navigator.pop(context);
-              _printInvoiceThermal(invoice, items);
-            },
-          ),
-        ],
-        cancelButton: CupertinoActionSheetAction(
-          child: const Text('إلغاء'),
-          onPressed: () {
-            Navigator.pop(context);
-            Navigator.pop(context); // العودة لشاشة نقطة البيع
-          },
-        ),
-      ),
-    );
+    // نافذة الطباعة أصبحت موحدة: طباعة مباشرة على الطابعة الافتراضية
+    _printInvoiceSystem(invoice, items);
   }
 
-  void _printInvoicePDF(Invoice invoice, List<CartItem> items) async {
+  // طباعة مباشرة باستخدام طابعة النظام الافتراضية (PDF/Windows)
+  Future<void> _printInvoiceSystem(
+    Invoice invoice,
+    List<CartItem> items,
+  ) async {
     try {
-      await ref
-          .read(printNotifierProvider.notifier)
-          .printInvoicePDF(invoice, items);
-
+      final facade = ref.read(printerFacadeProvider);
+      await facade.printInvoice(
+        invoice: invoice,
+        items: items,
+        mode: InvoicePrintMode.pdfSystem,
+      );
       if (mounted) {
-        _showSuccessMessage('تم إرسال الفاتورة للطباعة بنجاح');
-        Navigator.pop(context); // العودة لشاشة نقطة البيع
+        _showSuccessMessage('تم إرسال الفاتورة للطابعة الافتراضية بنجاح');
+        Navigator.pop(context); // إغلاق شاشة الدفع بعد الطباعة
       }
     } catch (error) {
       if (mounted) {
-        _showErrorMessage('خطأ في الطباعة: $error');
-      }
-    }
-  }
-
-  void _printInvoiceThermal(Invoice invoice, List<CartItem> items) async {
-    try {
-      await ref
-          .read(printNotifierProvider.notifier)
-          .printInvoiceThermal(invoice, items);
-
-      if (mounted) {
-        _showSuccessMessage('تم طباعة الفاتورة على الطابعة الحرارية بنجاح');
-        Navigator.pop(context); // العودة لشاشة نقطة البيع
-      }
-    } catch (error) {
-      if (mounted) {
-        _showErrorMessage('خطأ في الطباعة الحرارية: $error');
+        _showErrorMessage('خطأ في الطباعة على طابعة النظام: $error');
       }
     }
   }

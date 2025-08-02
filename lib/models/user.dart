@@ -1,6 +1,8 @@
 enum UserRole {
   admin('مدير'),
-  cashier('بائع');
+  manager('مدير عام'),
+  cashier('بائع'),
+  supervisor('مشرف');
 
   const UserRole(this.displayName);
   final String displayName;
@@ -14,6 +16,8 @@ class User {
   final UserRole role;
   final bool isActive;
   final DateTime createdAt;
+  final String? avatarIcon;
+  final String? avatarColor;
 
   User({
     this.id,
@@ -23,6 +27,8 @@ class User {
     required this.role,
     this.isActive = true,
     DateTime? createdAt,
+    this.avatarIcon,
+    this.avatarColor,
   }) : createdAt = createdAt ?? DateTime.now();
 
   Map<String, dynamic> toMap() {
@@ -34,6 +40,8 @@ class User {
       'role': role.name,
       'is_active': isActive ? 1 : 0,
       'created_at': createdAt.toIso8601String(),
+      'avatar_icon': avatarIcon,
+      'avatar_color': avatarColor,
     };
   }
 
@@ -49,6 +57,8 @@ class User {
       ),
       isActive: map['is_active'] == 1,
       createdAt: DateTime.parse(map['created_at']),
+      avatarIcon: map['avatar_icon'],
+      avatarColor: map['avatar_color'],
     );
   }
 
@@ -60,6 +70,8 @@ class User {
     UserRole? role,
     bool? isActive,
     DateTime? createdAt,
+    String? avatarIcon,
+    String? avatarColor,
   }) {
     return User(
       id: id ?? this.id,
@@ -69,6 +81,8 @@ class User {
       role: role ?? this.role,
       isActive: isActive ?? this.isActive,
       createdAt: createdAt ?? this.createdAt,
+      avatarIcon: avatarIcon ?? this.avatarIcon,
+      avatarColor: avatarColor ?? this.avatarColor,
     );
   }
 

@@ -1,128 +1,147 @@
-import '../models/settings.dart';
-import 'base_repository.dart';
 import '../services/database_service.dart';
+import 'dart:convert';
+import '../models/printer_settings.dart';
 
-class SettingsRepository extends BaseRepository {
-  SettingsRepository({DatabaseService? databaseService}) : super(databaseService ?? DatabaseService());
-  static const String tableName = 'settings';
+class SettingsRepository {
+  // حفظ اسم الطابعة الافتراضية
+  Future<void> setDefaultPrinterName(String printerName) async {
+    await _setSetting('default_printer_name', printerName);
+  }
 
-  Future<String?> getSetting(String key) async {
-    final maps = await query(
-      tableName,
+  // جلب اسم الطابعة الافتراضية
+  Future<String?> getDefaultPrinterName() async {
+    return await _getSetting('default_printer_name');
+  }
+
+  final DatabaseService _databaseService;
+
+  SettingsRepository({DatabaseService? databaseService})
+    : _databaseService = databaseService ?? DatabaseService();
+
+  Future<String?> _getSetting(String key) async {
+    final db = await _databaseService.database;
+    final result = await db.query(
+      'settings',
       where: 'key = ?',
       whereArgs: [key],
       limit: 1,
     );
-    
-    if (maps.isNotEmpty) {
-      return maps.first['value'] as String;
+
+    if (result.isNotEmpty) {
+      return result.first['value'] as String?;
     }
     return null;
   }
 
-  Future<double> getDoubleValue(String key, {double defaultValue = 0.0}) async {
-    final value = await getSetting(key);
-    if (value != null) {
-      return double.tryParse(value) ?? defaultValue;
-    }
-    return defaultValue;
-  }
-
-  Future<int> getIntValue(String key, {int defaultValue = 0}) async {
-    final value = await getSetting(key);
-    if (value != null) {
-      return int.tryParse(value) ?? defaultValue;
-    }
-    return defaultValue;
-  }
-
-  Future<bool> getBoolValue(String key, {bool defaultValue = false}) async {
-    final value = await getSetting(key);
-    if (value != null) {
-      return value.toLowerCase() == 'true';
-    }
-    return defaultValue;
-  }
-
-  Future<void> setSetting(String key, String value) async {
-    final existing = await getSetting(key);
+  Future<int> _setSetting(String key, String value) async {
+    final db = await _databaseService.database;
     final now = DateTime.now().toIso8601String();
-    
-    if (existing != null) {
-      await update(
-        tableName,
-        {'value': value, 'updated_at': now},
-        where: 'key = ?',
-        whereArgs: [key],
-      );
-    } else {
-      await insert(tableName, {
+
+    // محاولة التحديث أولاً
+    final updateCount = await db.update(
+      'settings',
+      {'value': value, 'updated_at': now},
+      where: 'key = ?',
+      whereArgs: [key],
+    );
+
+    // إذا لم يتم التحديث، قم بالإدراج
+    if (updateCount == 0) {
+      return await db.insert('settings', {
         'key': key,
         'value': value,
         'updated_at': now,
       });
     }
+
+    return updateCount;
   }
 
-  Future<void> setDoubleValue(String key, double value) async {
-    await setSetting(key, value.toString());
+  // Getters
+  Future<double?> getTaxRate() async {
+    final value = await _getSetting('tax_rate');
+    return value != null ? double.tryParse(value) : null;
   }
 
-  Future<void> setIntValue(String key, int value) async {
-    await setSetting(key, value.toString());
+  Future<double?> getGoldPrice() async {
+  // Deprecated: kept for backward compatibility if called before migration cleanup
+  return null;
   }
 
-  Future<void> setBoolValue(String key, bool value) async {
-    await setSetting(key, value.toString());
+  Future<double?> getSilverPrice() async {
+  // Deprecated
+  return null;
   }
 
-  Future<List<Settings>> getAllSettings() async {
-    final maps = await query(tableName, orderBy: 'key ASC');
-    return maps.map((map) => Settings.fromMap(map)).toList();
+  Future<String?> getStoreName() async {
+    return await _getSetting('store_name');
   }
 
-  Future<int> deleteSetting(String key) async {
-    return await delete(tableName, where: 'key = ?', whereArgs: [key]);
+  Future<String?> getStoreAddress() async {
+    return await _getSetting('store_address');
   }
 
-  // دوال مخصصة للإعدادات الشائعة
-  Future<double> getGoldPrice() async {
-    return await getDoubleValue(SettingsKeys.goldPricePerGram, defaultValue: 200.0);
+  Future<String?> getStorePhone() async {
+    return await _getSetting('store_phone');
   }
 
-  Future<void> setGoldPrice(double price) async {
-    await setDoubleValue(SettingsKeys.goldPricePerGram, price);
+  Future<String?> getInvoiceFooter() async {
+    return await _getSetting('invoice_footer');
   }
 
-  Future<double> getSilverPrice() async {
-    return await getDoubleValue(SettingsKeys.silverPricePerGram, defaultValue: 5.0);
+  Future<String?> getCurrency() async {
+    return await _getSetting('currency');
   }
 
-  Future<void> setSilverPrice(double price) async {
-    await setDoubleValue(SettingsKeys.silverPricePerGram, price);
+  // Setters
+  Future<int> setGoldPrice(double price) async {
+  // Deprecated no-op
+  return 0;
   }
 
-  Future<String> getStoreName() async {
-    return await getSetting(SettingsKeys.storeName) ?? 'مجوهرات جوهر';
+  Future<int> setSilverPrice(double price) async {
+  // Deprecated no-op
+  return 0;
   }
 
-  Future<void> setStoreName(String name) async {
-    await setSetting(SettingsKeys.storeName, name);
+  Future<int> setStoreName(String name) async {
+    return await _setSetting('store_name', name);
   }
 
-  Future<String> getCurrency() async {
-    return await getSetting(SettingsKeys.currency) ?? 'د.ل';
+  Future<int> setStoreAddress(String address) async {
+    return await _setSetting('store_address', address);
   }
 
-  Future<void> setCurrency(String currency) async {
-    await setSetting(SettingsKeys.currency, currency);
+  Future<int> setStorePhone(String phone) async {
+    return await _setSetting('store_phone', phone);
   }
 
-  Future<double> getTaxRate() async {
-    return await getDoubleValue(SettingsKeys.taxRate, defaultValue: 0.0);
+  Future<int> setInvoiceFooter(String footer) async {
+    return await _setSetting('invoice_footer', footer);
   }
 
-  Future<void> setTaxRate(double rate) async {
-    await setDoubleValue(SettingsKeys.taxRate, rate);
+  Future<int> setTaxRate(double rate) async {
+    return await _setSetting('tax_rate', rate.toString());
+  }
+
+  Future<int> setCurrency(String currency) async {
+    return await _setSetting('currency', currency);
+  }
+
+  // Printer settings persistence
+  Future<int> setDefaultPrinterSettings(PrinterSettings settings) async {
+    final jsonStr = jsonEncode(settings.toMap());
+    return await _setSetting('default_printer_settings', jsonStr);
+  }
+
+  Future<PrinterSettings?> getDefaultPrinterSettings() async {
+    final value = await _getSetting('default_printer_settings');
+    if (value == null) return null;
+    try {
+      final map = jsonDecode(value) as Map<String, dynamic>;
+      return PrinterSettings.fromMap(map);
+    } catch (_) {
+      return null;
+    }
   }
 }

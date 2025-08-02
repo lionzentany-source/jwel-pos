@@ -6,6 +6,7 @@ import '../models/item.dart';
 import '../providers/item_provider.dart';
 import '../services/rfid_service.dart'; // Import RfidReaderStatus
 import '../providers/rfid_provider.dart'; // Import rfidNotifierProvider and rfidTagProvider
+import '../utils/rfid_duplicate_filter.dart';
 
 class LinkRfidScreen extends ConsumerStatefulWidget {
   final Item item;
@@ -33,15 +34,32 @@ class _LinkRfidScreenState extends ConsumerState<LinkRfidScreen>
       CurvedAnimation(parent: _animationController, curve: Curves.easeInOut),
     );
 
-    // Start scanning when the screen is opened
-    ref.read(rfidNotifierProvider.notifier).startScanning();
+    // Initialize RFID connection after the widget is built
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _initializeRfidConnection();
+    });
+  }
+
+  Future<void> _initializeRfidConnection() async {
+    try {
+      // محاولة الاتصال بقارئ RFID
+      await ref
+          .read(rfidNotifierProvider.notifier)
+          .connect(port: 'COM3', baudRate: 115200, timeout: 5000);
+    } catch (e) {
+      debugPrint('فشل في الاتصال بقارئ RFID: $e');
+    }
   }
 
   @override
   void dispose() {
     _animationController.dispose();
-    // Optional: Stop scanning when leaving the screen
-    // ref.read(rfidNotifierProvider.notifier).stopScanning();
+    // إيقاف المسح عند الخروج من الشاشة
+    try {
+      ref.read(rfidNotifierProvider.notifier).stopScanning();
+    } catch (e) {
+      // تجاهل الأخطاء عند الخروج
+    }
     super.dispose();
   }
 
@@ -52,11 +70,18 @@ class _LinkRfidScreenState extends ConsumerState<LinkRfidScreen>
     // Listen for new tags
     ref.listen<AsyncValue<String>>(rfidTagProvider, (previous, next) {
       next.whenData((tagId) {
-        if (mounted) {
+        if (mounted && _scannedTag == null) {
+          if (!RfidDuplicateFilter.shouldProcess(tagId)) {
+            debugPrint('🔁 تجاهل بطاقة مكررة (ربط): $tagId');
+            return;
+          }
+          // فقط إذا لم يتم قراءة بطاقة من قبل
           setState(() {
             _scannedTag = tagId;
           });
           _animationController.stop();
+          // إيقاف المسح فوراً
+          ref.read(rfidNotifierProvider.notifier).stopScanning();
         }
       });
     });
@@ -104,7 +129,7 @@ class _LinkRfidScreenState extends ConsumerState<LinkRfidScreen>
         borderRadius: BorderRadius.circular(12),
         boxShadow: [
           BoxShadow(
-            color: CupertinoColors.systemGrey.withOpacity(0.1),
+            color: CupertinoColors.systemGrey.withValues(alpha: 0.1),
             blurRadius: 8,
             offset: const Offset(0, 2),
           ),
@@ -159,8 +184,8 @@ class _LinkRfidScreenState extends ConsumerState<LinkRfidScreen>
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: isConnected
-            ? CupertinoColors.activeGreen.withOpacity(0.1)
-            : CupertinoColors.systemRed.withOpacity(0.1),
+            ? CupertinoColors.activeGreen.withValues(alpha: 0.1)
+            : CupertinoColors.systemRed.withValues(alpha: 0.1),
         borderRadius: BorderRadius.circular(12),
         border: Border.all(
           color: isConnected
@@ -234,7 +259,7 @@ class _LinkRfidScreenState extends ConsumerState<LinkRfidScreen>
       margin: const EdgeInsets.symmetric(horizontal: 20),
       decoration: BoxDecoration(
         color: isScanning
-            ? CupertinoColors.activeBlue.withOpacity(0.1)
+            ? CupertinoColors.activeBlue.withValues(alpha: 0.1)
             : CupertinoColors.systemGrey6,
         borderRadius: BorderRadius.circular(20),
         border: Border.all(
@@ -257,7 +282,7 @@ class _LinkRfidScreenState extends ConsumerState<LinkRfidScreen>
                     width: 100,
                     height: 100,
                     decoration: BoxDecoration(
-                      color: CupertinoColors.activeBlue.withOpacity(0.3),
+                      color: CupertinoColors.activeBlue.withValues(alpha: 0.3),
                       shape: BoxShape.circle,
                     ),
                     child: const Icon(
@@ -335,9 +360,16 @@ class _LinkRfidScreenState extends ConsumerState<LinkRfidScreen>
             SizedBox(
               width: double.infinity,
               child: CupertinoButton.filled(
-                onPressed: () =>
-                    ref.read(rfidNotifierProvider.notifier).startScanning(),
+                onPressed: _startScanning,
                 child: const Text('بدء المسح'),
+              ),
+            ),
+            const SizedBox(height: 10),
+            SizedBox(
+              width: double.infinity,
+              child: CupertinoButton(
+                onPressed: _testConnection,
+                child: const Text('اختبار الاتصال'),
               ),
             ),
           ] else if (isScanning) ...[
@@ -376,7 +408,74 @@ class _LinkRfidScreenState extends ConsumerState<LinkRfidScreen>
     setState(() {
       _scannedTag = null;
     });
-    ref.read(rfidNotifierProvider.notifier).startScanning();
+    _startScanning();
+  }
+
+  Future<void> _startScanning() async {
+    final rfidNotifier = ref.read(rfidNotifierProvider.notifier);
+    final currentStatus = ref.read(rfidNotifierProvider);
+
+    // التحقق من حالة الاتصال
+    final isConnected = currentStatus.when(
+      data: (status) =>
+          status == RfidReaderStatus.connected ||
+          status == RfidReaderStatus.scanning,
+      loading: () => false,
+      error: (_, __) => false,
+    );
+
+    if (!isConnected) {
+      // محاولة الاتصال أولاً
+      try {
+        await rfidNotifier.connect(
+          port: 'COM3',
+          baudRate: 115200,
+          timeout: 5000,
+        );
+        // انتظار قصير للتأكد من الاتصال
+        await Future.delayed(const Duration(milliseconds: 500));
+      } catch (e) {
+        if (mounted) {
+          showCupertinoDialog(
+            context: context,
+            builder: (context) => CupertinoAlertDialog(
+              title: const Text('خطأ في الاتصال'),
+              content: const Text(
+                'لا يمكن الاتصال بقارئ RFID. تأكد من توصيل الجهاز وإعدادات المنفذ.',
+              ),
+              actions: [
+                CupertinoDialogAction(
+                  child: const Text('موافق'),
+                  onPressed: () => Navigator.pop(context),
+                ),
+              ],
+            ),
+          );
+        }
+        return;
+      }
+    }
+
+    // بدء المسح
+    try {
+      await rfidNotifier.startScanning();
+    } catch (e) {
+      if (mounted) {
+        showCupertinoDialog(
+          context: context,
+          builder: (context) => CupertinoAlertDialog(
+            title: const Text('خطأ في المسح'),
+            content: Text('فشل في بدء مسح RFID: $e'),
+            actions: [
+              CupertinoDialogAction(
+                child: const Text('موافق'),
+                onPressed: () => Navigator.pop(context),
+              ),
+            ],
+          ),
+        );
+      }
+    }
   }
 
   Future<void> _linkRfidTag() async {
@@ -385,6 +484,17 @@ class _LinkRfidScreenState extends ConsumerState<LinkRfidScreen>
     try {
       final itemNotifier = ref.read(itemNotifierProvider.notifier);
       await itemNotifier.linkRfidTag(widget.item.id!, _scannedTag!);
+
+      // تحديث جميع مزودي البيانات المتعلقة بالأصناف
+      ref.invalidate(itemByIdProvider(widget.item.id!));
+      ref.invalidate(itemsProvider);
+      ref.invalidate(itemNotifierProvider);
+      ref.invalidate(inventoryStatsProvider);
+      ref.invalidate(itemsByStatusProvider(ItemStatus.needsRfid));
+      ref.invalidate(itemsByStatusProvider(ItemStatus.inStock));
+
+      // إيقاف المسح نهائياً
+      await ref.read(rfidNotifierProvider.notifier).stopScanning();
 
       if (mounted) {
         showCupertinoDialog(
@@ -400,6 +510,10 @@ class _LinkRfidScreenState extends ConsumerState<LinkRfidScreen>
                 onPressed: () {
                   Navigator.pop(context); // إغلاق الحوار
                   Navigator.pop(context); // العودة للشاشة السابقة
+                  // تحديث إضافي لضمان تحديث البيانات
+                  Future.delayed(const Duration(milliseconds: 100), () {
+                    ref.read(itemNotifierProvider.notifier).refresh();
+                  });
                 },
               ),
             ],
@@ -413,6 +527,45 @@ class _LinkRfidScreenState extends ConsumerState<LinkRfidScreen>
           builder: (context) => CupertinoAlertDialog(
             title: const Text('خطأ'),
             content: Text('حدث خطأ أثناء ربط البطاقة: $error'),
+            actions: [
+              CupertinoDialogAction(
+                child: const Text('موافق'),
+                onPressed: () => Navigator.pop(context),
+              ),
+            ],
+          ),
+        );
+      }
+    }
+  }
+
+  Future<void> _testConnection() async {
+    try {
+      final rfidNotifier = ref.read(rfidNotifierProvider.notifier);
+      await rfidNotifier.testConnection();
+
+      if (mounted) {
+        showCupertinoDialog(
+          context: context,
+          builder: (context) => CupertinoAlertDialog(
+            title: const Text('نجح الاختبار'),
+            content: const Text('تم الاتصال بقارئ RFID بنجاح'),
+            actions: [
+              CupertinoDialogAction(
+                child: const Text('موافق'),
+                onPressed: () => Navigator.pop(context),
+              ),
+            ],
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        showCupertinoDialog(
+          context: context,
+          builder: (context) => CupertinoAlertDialog(
+            title: const Text('فشل الاختبار'),
+            content: Text('فشل في اختبار الاتصال: $e'),
             actions: [
               CupertinoDialogAction(
                 child: const Text('موافق'),

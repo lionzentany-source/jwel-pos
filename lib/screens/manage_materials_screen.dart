@@ -156,92 +156,142 @@ class _ManageMaterialsScreenState extends ConsumerState<ManageMaterialsScreen> {
 
   void _showAddMaterialDialog() {
     final nameController = TextEditingController();
+  final priceController = TextEditingController();
+  bool isVariable = false;
 
     showCupertinoDialog(
       context: context,
-      builder: (context) => CupertinoAlertDialog(
-        title: const Text('إضافة مادة خام جديدة'),
-        content: Column(
-          children: [
-            const SizedBox(height: 16),
-            CupertinoTextField(
-              controller: nameController,
-              placeholder: 'اسم المادة الخام',
+      builder: (context) => StatefulBuilder(
+        builder: (ctx, setStateSB) => CupertinoAlertDialog(
+          title: const Text('إضافة مادة خام جديدة'),
+          content: Column(
+            children: [
+              const SizedBox(height: 12),
+              CupertinoTextField(
+                controller: nameController,
+                placeholder: 'اسم المادة الخام',
+              ),
+              const SizedBox(height: 12),
+              Row(
+                children: [
+                  const Expanded(child: Text('سعر متغير؟', style: TextStyle(fontSize: 14))),
+                  CupertinoSwitch(
+                    value: isVariable,
+                    onChanged: (v) => setStateSB(() {
+                      isVariable = v;
+                    }),
+                  ),
+                ],
+              ),
+              if (isVariable) ...[
+                const SizedBox(height: 8),
+                CupertinoTextField(
+                  controller: priceController,
+                  placeholder: 'سعر الجرام',
+                  keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                ),
+              ],
+            ],
+          ),
+          actions: [
+            CupertinoDialogAction(
+              child: const Text('إلغاء'),
+              onPressed: () => Navigator.pop(context),
+            ),
+            CupertinoDialogAction(
+              onPressed: () async {
+                if (nameController.text.isNotEmpty) {
+                  final navigator = Navigator.of(context);
+                  try {
+                    final material = Material(
+                      nameAr: nameController.text,
+                      isVariable: isVariable,
+                      pricePerGram: isVariable ? double.tryParse(priceController.text) ?? 0 : 0,
+                    );
+                    await ref.read(materialNotifierProvider.notifier).addMaterial(material);
+                    navigator.pop();
+                    _showSuccessMessage('تم إضافة المادة بنجاح');
+                  } catch (error) {
+                    _showErrorMessage('خطأ في إضافة المادة: $error');
+                  }
+                }
+              },
+              child: const Text('إضافة'),
             ),
           ],
         ),
-        actions: [
-          CupertinoDialogAction(
-            child: const Text('إلغاء'),
-            onPressed: () => Navigator.pop(context),
-          ),
-          CupertinoDialogAction(
-            onPressed: () async {
-              if (nameController.text.isNotEmpty) {
-                final navigator = Navigator.of(context);
-                try {
-                  final material = Material(nameAr: nameController.text);
-
-                  await ref
-                      .read(materialNotifierProvider.notifier)
-                      .addMaterial(material);
-                  navigator.pop();
-                  _showSuccessMessage('تم إضافة المادة بنجاح');
-                } catch (error) {
-                  _showErrorMessage('خطأ في إضافة المادة: $error');
-                }
-              }
-            },
-            child: const Text('إضافة'),
-          ),
-        ],
       ),
     );
   }
 
   void _showEditMaterialDialog(Material material) {
     final nameController = TextEditingController(text: material.nameAr);
+    final priceController = TextEditingController(
+      text: material.isVariable ? material.pricePerGram.toString() : '',
+    );
+    bool isVariable = material.isVariable;
 
     showCupertinoDialog(
       context: context,
-      builder: (context) => CupertinoAlertDialog(
-        title: const Text('تعديل المادة'),
-        content: Column(
-          children: [
-            const SizedBox(height: 16),
-            CupertinoTextField(
-              controller: nameController,
-              placeholder: 'اسم المادة الخام',
+      builder: (context) => StatefulBuilder(
+        builder: (ctx, setStateSB) => CupertinoAlertDialog(
+          title: const Text('تعديل المادة'),
+          content: Column(
+            children: [
+              const SizedBox(height: 12),
+              CupertinoTextField(
+                controller: nameController,
+                placeholder: 'اسم المادة الخام',
+              ),
+              const SizedBox(height: 12),
+              Row(
+                children: [
+                  const Expanded(child: Text('سعر متغير؟', style: TextStyle(fontSize: 14))),
+                  CupertinoSwitch(
+                    value: isVariable,
+                    onChanged: (v) => setStateSB(() {
+                      isVariable = v;
+                    }),
+                  ),
+                ],
+              ),
+              if (isVariable) ...[
+                const SizedBox(height: 8),
+                CupertinoTextField(
+                  controller: priceController,
+                  placeholder: 'سعر الجرام',
+                  keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                ),
+              ],
+            ],
+          ),
+          actions: [
+            CupertinoDialogAction(
+              child: const Text('إلغاء'),
+              onPressed: () => Navigator.pop(context),
+            ),
+            CupertinoDialogAction(
+              onPressed: () async {
+                if (nameController.text.isNotEmpty) {
+                  final navigator = Navigator.of(context);
+                  try {
+                    final updatedMaterial = material.copyWith(
+                      nameAr: nameController.text,
+                      isVariable: isVariable,
+                      pricePerGram: isVariable ? double.tryParse(priceController.text) ?? material.pricePerGram : 0,
+                    );
+                    await ref.read(materialNotifierProvider.notifier).updateMaterial(updatedMaterial);
+                    navigator.pop();
+                    _showSuccessMessage('تم تحديث المادة بنجاح');
+                  } catch (error) {
+                    _showErrorMessage('خطأ في تحديث المادة: $error');
+                  }
+                }
+              },
+              child: const Text('حفظ'),
             ),
           ],
         ),
-        actions: [
-          CupertinoDialogAction(
-            child: const Text('إلغاء'),
-            onPressed: () => Navigator.pop(context),
-          ),
-          CupertinoDialogAction(
-            onPressed: () async {
-              if (nameController.text.isNotEmpty) {
-                final navigator = Navigator.of(context);
-                try {
-                  final updatedMaterial = material.copyWith(
-                    nameAr: nameController.text,
-                  );
-
-                  await ref
-                      .read(materialNotifierProvider.notifier)
-                      .updateMaterial(updatedMaterial);
-                  navigator.pop();
-                  _showSuccessMessage('تم تحديث المادة بنجاح');
-                } catch (error) {
-                  _showErrorMessage('خطأ في تحديث المادة: $error');
-                }
-              }
-            },
-            child: const Text('حفظ'),
-          ),
-        ],
       ),
     );
   }

@@ -1,21 +1,62 @@
 import 'package:sqflite/sqflite.dart';
 import '../services/database_service.dart';
 
-abstract class BaseRepository {
+abstract class BaseRepository<T> {
   final DatabaseService _databaseService;
+  final String tableName;
 
-  BaseRepository(this._databaseService);
+  BaseRepository(this._databaseService, this.tableName);
 
   Future<Database> get database async => await _databaseService.database;
 
-  // دوال مساعدة عامة
-  Future<int> insert(String table, Map<String, dynamic> data) async {
+  T fromMap(Map<String, dynamic> map);
+  Map<String, dynamic> toMap(T obj);
+
+  Future<int> insert(T obj) async { // Changed return type to int
     final db = await database;
-    return await db.insert(table, data);
+    return await db.insert(tableName, toMap(obj)); // Return the id
   }
 
-  Future<List<Map<String, dynamic>>> query(
-    String table, {
+  Future<List<T>> getAll() async {
+    final db = await database;
+    final List<Map<String, dynamic>> maps = await db.query(tableName);
+    return List.generate(maps.length, (i) => fromMap(maps[i]));
+  }
+
+  Future<T?> getById(int id) async {
+    final db = await database;
+    final List<Map<String, dynamic>> maps = await db.query(
+      tableName,
+      where: 'id = ?',
+      whereArgs: [id],
+    );
+    if (maps.isNotEmpty) {
+      return fromMap(maps.first);
+    } else {
+      return null;
+    }
+  }
+
+  Future<int> update(T obj) async {
+    final db = await database;
+    return await db.update(
+      tableName,
+      toMap(obj),
+      where: 'id = ?',
+      whereArgs: [toMap(obj)['id']],
+    );
+  }
+
+  Future<int> delete(int id) async {
+    final db = await database;
+    return await db.delete(
+      tableName,
+      where: 'id = ?',
+      whereArgs: [id],
+    );
+  }
+
+  Future<List<Map<String, dynamic>>> query({
     bool? distinct,
     List<String>? columns,
     String? where,
@@ -28,7 +69,7 @@ abstract class BaseRepository {
   }) async {
     final db = await database;
     return await db.query(
-      table,
+      tableName,
       distinct: distinct,
       columns: columns,
       where: where,
@@ -41,50 +82,7 @@ abstract class BaseRepository {
     );
   }
 
-  Future<int> update(
-    String table,
-    Map<String, dynamic> values, {
-    String? where,
-    List<Object?>? whereArgs,
-  }) async {
-    final db = await database;
-    return await db.update(table, values, where: where, whereArgs: whereArgs);
-  }
-
-  Future<int> delete(
-    String table, {
-    String? where,
-    List<Object?>? whereArgs,
-  }) async {
-    final db = await database;
-    return await db.delete(table, where: where, whereArgs: whereArgs);
-  }
-
-  Future<List<Map<String, dynamic>>> rawQuery(
-    String sql, [
-    List<Object?>? arguments,
-  ]) async {
-    final db = await database;
-    return await db.rawQuery(sql, arguments);
-  }
-
-  Future<int> rawInsert(String sql, [List<Object?>? arguments]) async {
-    final db = await database;
-    return await db.rawInsert(sql, arguments);
-  }
-
-  Future<int> rawUpdate(String sql, [List<Object?>? arguments]) async {
-    final db = await database;
-    return await db.rawUpdate(sql, arguments);
-  }
-
-  Future<int> rawDelete(String sql, [List<Object?>? arguments]) async {
-    final db = await database;
-    return await db.rawDelete(sql, arguments);
-  }
-
-  // دالة لتنفيذ معاملة (Transaction)
-  Future<T> transaction<T>(Future<T> Function(Transaction txn) action) async {
+  Future<R> transaction<R>(Future<R> Function(Transaction txn) action) async {
     final db = await database;
     return await db.transaction(action);
   }

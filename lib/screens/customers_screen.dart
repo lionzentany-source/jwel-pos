@@ -179,7 +179,7 @@ class _CustomersScreenState extends ConsumerState<CustomersScreen> {
 
   void _showCustomerFormDialog({Customer? customer}) {
     final isEditMode = customer != null;
-    final formKey = GlobalKey<FormState>();
+
     final nameController = TextEditingController(text: customer?.name ?? '');
     final phoneController = TextEditingController(text: customer?.phone ?? '');
     final emailController = TextEditingController(text: customer?.email ?? '');
@@ -191,40 +191,27 @@ class _CustomersScreenState extends ConsumerState<CustomersScreen> {
       context: context,
       builder: (context) => CupertinoAlertDialog(
         title: Text(isEditMode ? 'تعديل العميل' : 'إضافة عميل جديد'),
-        content: Form(
-          key: formKey,
-          child: Column(
+        content: Column(
             children: [
               const SizedBox(height: 16),
-              CupertinoTextFormFieldRow(
+              CupertinoTextField(
                 controller: nameController,
                 placeholder: 'الاسم *',
-                validator: (value) {
-                  if (value == null || value.isEmpty) {
-                    return 'الاسم مطلوب';
-                  }
-                  return null;
-                },
+                padding: const EdgeInsets.all(12),
               ),
               const SizedBox(height: 12),
-              CupertinoTextFormFieldRow(
+              CupertinoTextField(
                 controller: phoneController,
                 placeholder: 'الهاتف',
                 keyboardType: TextInputType.phone,
+                padding: const EdgeInsets.all(12),
               ),
               const SizedBox(height: 12),
-              CupertinoTextFormFieldRow(
+              CupertinoTextField(
                 controller: emailController,
                 placeholder: 'البريد الإلكتروني',
                 keyboardType: TextInputType.emailAddress,
-                validator: (value) {
-                  if (value != null &&
-                      value.isNotEmpty &&
-                      !value.contains('@')) {
-                    return 'بريد إلكتروني غير صالح';
-                  }
-                  return null;
-                },
+                padding: const EdgeInsets.all(12),
               ),
               const SizedBox(height: 12),
               CupertinoTextField(
@@ -232,7 +219,6 @@ class _CustomersScreenState extends ConsumerState<CustomersScreen> {
                 placeholder: 'العنوان',
               ),
             ],
-          ),
         ),
         actions: [
           CupertinoDialogAction(
@@ -241,7 +227,7 @@ class _CustomersScreenState extends ConsumerState<CustomersScreen> {
           ),
           CupertinoDialogAction(
             onPressed: () async {
-              if (formKey.currentState?.validate() ?? false) {
+              if (nameController.text.isNotEmpty) {
                 final newCustomer = Customer(
                   id: customer?.id,
                   name: nameController.text,

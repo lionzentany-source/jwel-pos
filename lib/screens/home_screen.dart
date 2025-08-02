@@ -7,12 +7,32 @@ import 'invoices_screen.dart';
 import 'customers_screen.dart';
 import 'settings_screen.dart';
 import 'reports_screen.dart';
+import 'expenses_screen.dart';
 
-class HomeScreen extends ConsumerWidget {
-  const HomeScreen({super.key});
+class HomeScreen extends ConsumerStatefulWidget {
+  final int initialIndex;
+  const HomeScreen({super.key, this.initialIndex = 0});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<HomeScreen> createState() => _HomeScreenState();
+}
+
+class _HomeScreenState extends ConsumerState<HomeScreen> {
+  @override
+  void initState() {
+    super.initState();
+    if (widget.initialIndex == 1) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        Navigator.push(
+          context,
+          CupertinoPageRoute(builder: (context) => const PosScreen()),
+        );
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
     return AdaptiveScaffold(
       title: 'نظام جوهر',
       body: LayoutBuilder(
@@ -96,6 +116,20 @@ class HomeScreen extends ConsumerWidget {
               ),
               _buildMenuCard(
                 context,
+                title: 'المصروفات',
+                icon: CupertinoIcons.list_bullet_below_rectangle,
+                color: CupertinoColors.systemIndigo,
+                onTap: () {
+                  Navigator.push(
+                    context,
+                    CupertinoPageRoute(
+                      builder: (context) => const ExpensesScreen(),
+                    ),
+                  );
+                },
+              ),
+              _buildMenuCard(
+                context,
                 title: 'الإعدادات',
                 icon: CupertinoIcons.settings,
                 color: CupertinoColors.systemGrey,
@@ -114,6 +148,8 @@ class HomeScreen extends ConsumerWidget {
       ),
     );
   }
+
+  // (تم دمج التقارير الأساسية والمتقدمة في شاشة واحدة)
 
   Widget _buildMenuCard(
     BuildContext context, {

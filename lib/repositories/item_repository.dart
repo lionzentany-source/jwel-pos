@@ -1,109 +1,44 @@
 import '../models/item.dart';
 import 'base_repository.dart';
-
 import '../services/database_service.dart';
 
-class ItemRepository extends BaseRepository {
-  ItemRepository({DatabaseService? databaseService}) : super(databaseService ?? DatabaseService());
-  static const String tableName = 'items';
+class ItemRepository extends BaseRepository<Item> {
+  ItemRepository({DatabaseService? databaseService})
+      : super(databaseService ?? DatabaseService(), 'items');
+
+  @override
+  Item fromMap(Map<String, dynamic> map) {
+    return Item.fromMap(map);
+  }
+
+  @override
+  Map<String, dynamic> toMap(Item obj) {
+    return obj.toMap();
+  }
 
   Future<List<Item>> getAllItems() async {
-    final maps = await query(tableName, orderBy: 'created_at DESC');
-    return maps.map((map) => Item.fromMap(map)).toList();
-  }
-
-  Future<List<Item>> getItemsByStatus(ItemStatus status) async {
-    final maps = await query(
-      tableName,
-      where: 'status = ?',
-      whereArgs: [status.name],
-      orderBy: 'created_at DESC',
-    );
-    return maps.map((map) => Item.fromMap(map)).toList();
-  }
-
-  Future<List<Item>> getItemsByCategory(int categoryId) async {
-    final maps = await query(
-      tableName,
-      where: 'category_id = ?',
-      whereArgs: [categoryId],
-      orderBy: 'created_at DESC',
-    );
+    final maps = await super.query(orderBy: 'sku ASC');
     return maps.map((map) => Item.fromMap(map)).toList();
   }
 
   Future<Item?> getItemById(int id) async {
-    final maps = await query(
-      tableName,
-      where: 'id = ?',
-      whereArgs: [id],
-      limit: 1,
-    );
-    
-    if (maps.isNotEmpty) {
-      return Item.fromMap(maps.first);
-    }
-    return null;
-  }
-
-  Future<Item?> getItemByRfidTag(String rfidTag) async {
-    final maps = await query(
-      tableName,
-      where: 'rfid_tag = ?',
-      whereArgs: [rfidTag],
-      limit: 1,
-    );
-    
-    if (maps.isNotEmpty) {
-      return Item.fromMap(maps.first);
-    }
-    return null;
-  }
-
-  Future<Item?> getItemBySku(String sku) async {
-    final maps = await query(
-      tableName,
-      where: 'sku = ?',
-      whereArgs: [sku],
-      limit: 1,
-    );
-    
-    if (maps.isNotEmpty) {
-      return Item.fromMap(maps.first);
-    }
-    return null;
+    return await super.getById(id);
   }
 
   Future<int> insertItem(Item item) async {
-    return await insert(tableName, item.toMap());
+    return await super.insert(item);
   }
 
   Future<int> updateItem(Item item) async {
-    return await update(
-      tableName,
-      item.toMap(),
-      where: 'id = ?',
-      whereArgs: [item.id],
-    );
+    return await super.update(item);
   }
 
   Future<int> deleteItem(int id) async {
-    // التحقق من عدم وجود فواتير مرتبطة بهذا الصنف
-    final invoiceItemsCount = await rawQuery(
-      'SELECT COUNT(*) as count FROM invoice_items WHERE item_id = ?',
-      [id],
-    );
-    
-    if (invoiceItemsCount.first['count'] as int > 0) {
-      throw Exception('لا يمكن حذف الصنف لوجود فواتير مرتبطة به');
-    }
-    
-    return await delete(tableName, where: 'id = ?', whereArgs: [id]);
+    return await super.delete(id);
   }
 
-  Future<bool> skuExists(String sku) async {
-    final maps = await query(
-      tableName,
+  Future<bool> itemExists(String sku) async {
+    final maps = await super.query(
       where: 'sku = ?',
       whereArgs: [sku],
       limit: 1,
@@ -111,56 +46,115 @@ class ItemRepository extends BaseRepository {
     return maps.isNotEmpty;
   }
 
-  Future<bool> rfidTagExists(String rfidTag) async {
-    final maps = await query(
-      tableName,
+  Future<String> generateNextSku() async {
+    final maps = await super.query(orderBy: 'id DESC', limit: 1);
+    if (maps.isEmpty) {
+      return 'ITEM001';
+    }
+    
+    // البحث عن أكبر رقم SKU
+    final allItems = await super.query();
+    int maxNumber = 0;
+    
+    for (final map in allItems) {
+      final sku = map['sku'] as String;
+      if (sku.startsWith('ITEM')) {
+        final numberPart = sku.substring(4);
+        final number = int.tryParse(numberPart);
+        if (number != null && number > maxNumber) {
+          maxNumber = number;
+        }
+      }
+    }
+    
+    final nextNumber = maxNumber + 1;
+    return 'ITEM${nextNumber.toString().padLeft(3, '0')}';
+  }
+
+  Future<List<Item>> getItemsByCategoryId(int categoryId) async {
+    final maps = await super.query(
+      where: 'category_id = ?',
+      whereArgs: [categoryId],
+      orderBy: 'sku ASC',
+    );
+    return maps.map((map) => Item.fromMap(map)).toList();
+  }
+
+  Future<List<Item>> getItemsByMaterialId(int materialId) async {
+    final maps = await super.query(
+      where: 'material_id = ?',
+      whereArgs: [materialId],
+      orderBy: 'sku ASC',
+    );
+    return maps.map((map) => Item.fromMap(map)).toList();
+  }
+
+  Future<Item?> getItemByRfidTag(String rfidTag) async {
+    final maps = await super.query(
       where: 'rfid_tag = ?',
       whereArgs: [rfidTag],
       limit: 1,
     );
-    return maps.isNotEmpty;
+    if (maps.isNotEmpty) {
+      return Item.fromMap(maps.first);
+    }
+    return null;
   }
 
   Future<int> linkRfidTag(int itemId, String rfidTag) async {
-    // التحقق من عدم استخدام البطاقة مسبقاً
-    if (await rfidTagExists(rfidTag)) {
-      throw Exception('هذه البطاقة مستخدمة مسبقاً');
+    // التحقق من عدم وجود البطاقة مع صنف آخر
+    final existingItem = await getItemByRfidTag(rfidTag);
+    if (existingItem != null && existingItem.id != itemId) {
+      throw Exception('هذه البطاقة مربوطة بالفعل بصنف آخر: ${existingItem.sku}');
     }
     
-    return await update(
-      tableName,
-      {
-        'rfid_tag': rfidTag,
-        'status': ItemStatus.inStock.name,
-      },
-      where: 'id = ?',
-      whereArgs: [itemId],
-    );
+    final item = await getItemById(itemId);
+    if (item != null) {
+      // إنشاء نسخة جديدة من الصنف مع البطاقة والحالة المحدثة
+      final updatedItem = Item(
+        id: item.id,
+        sku: item.sku,
+        categoryId: item.categoryId,
+        materialId: item.materialId,
+        weightGrams: item.weightGrams,
+        karat: item.karat,
+        workmanshipFee: item.workmanshipFee,
+        stonePrice: item.stonePrice,
+        costPrice: item.costPrice,
+        imagePath: item.imagePath,
+        rfidTag: rfidTag, // ربط البطاقة
+        status: ItemStatus.inStock, // تحديث الحالة
+        createdAt: item.createdAt,
+      );
+      return await super.update(updatedItem);
+    }
+    throw Exception('الصنف غير موجود');
   }
 
-  Future<String> generateNextSku() async {
-    final result = await rawQuery(
-      'SELECT COUNT(*) as count FROM $tableName',
+  // Specific item-related methods
+  Future<List<Item>> getItemsByStatus(String status) async {
+    // Assuming 'status' is a field in the Item model or can be derived
+    // This is a placeholder, you'll need to define how 'status' is determined
+    final maps = await super.query(
+      where: 'status = ?', // You might need to adjust this based on your Item model
+      whereArgs: [status],
+      orderBy: 'sku ASC',
     );
-    final count = result.first['count'] as int;
-    return 'JWE${(count + 1).toString().padLeft(6, '0')}';
+    return maps.map((map) => Item.fromMap(map)).toList();
   }
 
-  // إحصائيات المخزون
   Future<Map<String, int>> getInventoryStats() async {
-    final result = await rawQuery('''
-      SELECT 
-        status,
-        COUNT(*) as count
-      FROM $tableName 
-      GROUP BY status
-    ''');
-    
-    Map<String, int> stats = {};
-    for (var row in result) {
-      stats[row['status'] as String] = row['count'] as int;
+    // This is a placeholder for inventory statistics.
+    // You would typically query the database to get counts of items by status, category, etc.
+    // Example: SELECT status, COUNT(*) FROM items GROUP BY status
+    final maps = await super.query(
+      columns: ['status', 'COUNT(*) as count'],
+      groupBy: 'status',
+    );
+    final stats = <String, int>{};
+    for (var map in maps) {
+      stats[map['status'] as String] = map['count'] as int;
     }
-    
     return stats;
   }
 }

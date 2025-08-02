@@ -1,0 +1,5 @@
+{
+  "codium.codeCompletion.enable": true,
+  "CodeGPT.apiKey": "CodeGPT Plus Beta",
+  "cmake.sourceDirectory": "C:/develpment/flutter/applaction/Pos/jwe_pos/windows"
+}

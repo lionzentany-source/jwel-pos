@@ -1,7 +1,6 @@
 enum PaymentMethod {
   cash('نقدي'),
-  card('بطاقة'),
-  installment('تقسيط');
+  card('بطاقة');
 
   const PaymentMethod(this.displayName);
   final String displayName;

@@ -4,7 +4,9 @@
 
 list(APPEND FLUTTER_PLUGIN_LIST
   file_selector_windows
+  flutter_libserialport
   print_usb
+  printing
   url_launcher_windows
 )
 

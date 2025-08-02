@@ -11,6 +11,11 @@ final materialsProvider = FutureProvider<List<Material>>((ref) async {
   return await repository.getAllMaterials();
 });
 
+final variableMaterialsProvider = FutureProvider<List<Material>>((ref) async {
+  final repository = ref.read(materialRepositoryProvider);
+  return await repository.getVariableMaterials();
+});
+
 final materialByIdProvider = FutureProvider.family<Material?, int>((ref, id) async {
   final repository = ref.read(materialRepositoryProvider);
   return await repository.getMaterialById(id);
@@ -46,6 +51,15 @@ class MaterialNotifier extends StateNotifier<AsyncValue<List<Material>>> {
     try {
       await _repository.updateMaterial(material);
       await loadMaterials(); // إعادة تحميل القائمة
+    } catch (error) {
+      rethrow;
+    }
+  }
+
+  Future<void> updateMaterialPrice(int materialId, double newPrice) async {
+    try {
+      await _repository.updateMaterialPrice(materialId, newPrice);
+      await loadMaterials();
     } catch (error) {
       rethrow;
     }

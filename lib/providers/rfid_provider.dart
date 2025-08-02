@@ -1,8 +1,8 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../services/rfid_service.dart';
 
-final rfidServiceProvider = Provider<RfidService>((ref) {
-  return RfidService();
+final rfidServiceProvider = Provider<RfidServiceReal>((ref) {
+  return RfidServiceReal();
 });
 
 final rfidStatusProvider = StreamProvider<RfidReaderStatus>((ref) {
@@ -20,7 +20,7 @@ class RfidNotifier extends StateNotifier<AsyncValue<RfidReaderStatus>> {
     _initialize();
   }
 
-  final RfidService _rfidService;
+  final RfidServiceReal _rfidService;
 
   Future<void> _initialize() async {
     try {
@@ -79,18 +79,103 @@ class RfidNotifier extends StateNotifier<AsyncValue<RfidReaderStatus>> {
       state = AsyncValue.error(error, stackTrace);
     }
   }
+
+  Future<void> connect({
+    String? port,
+    int? baudRate,
+    int? timeout,
+    String? deviceAddress,
+    String? interface,
+    double? startFreq,
+    double? endFreq,
+    bool singleFrequency = false,
+  }) async {
+    state = const AsyncValue.loading();
+    try {
+      await _rfidService.connect(
+        port: port ?? 'COM3',
+        baudRate: baudRate ?? 115200,
+        timeout: timeout ?? 5000,
+        deviceAddress: deviceAddress,
+        interface: interface,
+        startFreq: startFreq,
+        endFreq: endFreq,
+        singleFrequency: singleFrequency,
+      );
+      state = AsyncValue.data(_rfidService.currentStatus);
+    } catch (error, stackTrace) {
+      state = AsyncValue.error(error, stackTrace);
+    }
+  }
+
+  Future<void> setPower(int power) async {
+    try {
+      await _rfidService.setPower(power);
+    } catch (error, stackTrace) {
+      state = AsyncValue.error(error, stackTrace);
+    }
+  }
+
+  void setBeepOnRead(bool value) {
+    _rfidService.setBeepOnRead(value);
+  }
+
+  /// إدخال بطاقة RFID يدوياً
+  void inputRfidTag(String tagId) {
+    _rfidService.inputRfidTag(tagId);
+  }
+
+  /// الحصول على معلومات الجهاز
+  Future<Map<String, dynamic>?> getDeviceInfo() async {
+    try {
+      return await _rfidService.getDeviceInfo();
+    } catch (error) {
+      return null;
+    }
+  }
+
+  /// إعادة تهيئة الجهاز
+  Future<bool> initializeDevice() async {
+    try {
+      final success = await _rfidService.initializeDevice();
+      if (success) {
+        state = AsyncValue.data(_rfidService.currentStatus);
+      }
+      return success;
+    } catch (error, stackTrace) {
+      state = AsyncValue.error(error, stackTrace);
+      return false;
+    }
+  }
+
+  /// تشغيل صوت التنبيه
+  Future<bool> playBeep() async {
+    try {
+      return await _rfidService.playBeep();
+    } catch (error) {
+      return false;
+    }
+  }
+
+  /// مسح البطاقات المقروءة مؤخراً
+  void clearRecentlyReadTags() {
+    _rfidService.clearRecentlyReadTags();
+  }
 }
 
-final rfidNotifierProvider = StateNotifierProvider<RfidNotifier, AsyncValue<RfidReaderStatus>>((ref) {
-  final rfidService = ref.read(rfidServiceProvider);
-  return RfidNotifier(rfidService);
-});
+final rfidNotifierProvider =
+    StateNotifierProvider<RfidNotifier, AsyncValue<RfidReaderStatus>>((ref) {
+      final rfidService = ref.read(rfidServiceProvider);
+      return RfidNotifier(rfidService);
+    });
 
 // مزود للتحقق من حالة الاتصال
 final isRfidConnectedProvider = Provider<bool>((ref) {
   final statusAsync = ref.watch(rfidNotifierProvider);
   return statusAsync.when(
-    data: (status) => status == RfidReaderStatus.connected || status == RfidReaderStatus.scanning,
+    data: (status) =>
+        status == RfidReaderStatus.connected ||
+        status == RfidReaderStatus.scanning,
     loading: () => false,
     error: (_, __) => false,
   );

@@ -160,7 +160,7 @@ class AdaptiveCard extends StatelessWidget {
           borderRadius: BorderRadius.circular(12.0),
           boxShadow: [
             BoxShadow(
-              color: CupertinoColors.systemGrey.withOpacity(0.1),
+              color: CupertinoColors.systemGrey.withValues(alpha: 0.1),
               blurRadius: 8,
               offset: const Offset(0, 2),
             ),

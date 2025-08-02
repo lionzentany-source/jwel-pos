@@ -7,14 +7,20 @@
 #include "generated_plugin_registrant.h"
 
 #include <file_selector_windows/file_selector_windows.h>
+#include <flutter_libserialport/flutter_libserialport_plugin.h>
 #include <print_usb/print_usb_plugin_c_api.h>
+#include <printing/printing_plugin.h>
 #include <url_launcher_windows/url_launcher_windows.h>
 
 void RegisterPlugins(flutter::PluginRegistry* registry) {
   FileSelectorWindowsRegisterWithRegistrar(
       registry->GetRegistrarForPlugin("FileSelectorWindows"));
+  FlutterLibserialportPluginRegisterWithRegistrar(
+      registry->GetRegistrarForPlugin("FlutterLibserialportPlugin"));
   PrintUsbPluginCApiRegisterWithRegistrar(
       registry->GetRegistrarForPlugin("PrintUsbPluginCApi"));
+  PrintingPluginRegisterWithRegistrar(
+      registry->GetRegistrarForPlugin("PrintingPlugin"));
   UrlLauncherWindowsRegisterWithRegistrar(
       registry->GetRegistrarForPlugin("UrlLauncherWindows"));
 }

@@ -9,6 +9,8 @@ import '../providers/settings_provider.dart';
 import '../widgets/app_loading_error_widget.dart';
 import '../models/customer.dart';
 import '../providers/customer_provider.dart';
+import '../services/printer_facade.dart';
+import '../services/user_service.dart';
 // import '../providers/print_provider.dart'; // Will be used for re-printing
 
 class InvoicesScreen extends ConsumerStatefulWidget {
@@ -178,8 +180,81 @@ class _InvoicesScreenState extends ConsumerState<InvoicesScreen> {
           Text(
             'التاريخ: ${DateFormat('yyyy-MM-dd – hh:mm a').format(invoice.createdAt)}',
           ),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              CupertinoButton(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 4,
+                ),
+                color: CupertinoColors.activeBlue,
+                child: const Text(
+                  'طباعة حرارية',
+                  style: TextStyle(fontSize: 12),
+                ),
+                onPressed: () => _reprintInvoice(
+                  invoice,
+                  mode: InvoicePrintMode.thermal,
+                  customer: customer,
+                ),
+              ),
+              const SizedBox(width: 8),
+              CupertinoButton(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 4,
+                ),
+                color: CupertinoColors.systemGrey,
+                child: const Text('طباعة HTML', style: TextStyle(fontSize: 12)),
+                onPressed: () => _reprintInvoice(
+                  invoice,
+                  mode: InvoicePrintMode.html,
+                  customer: customer,
+                ),
+              ),
+            ],
+          ),
         ],
       ),
     );
+  }
+
+  Future<void> _reprintInvoice(
+    Invoice invoice, {
+    required InvoicePrintMode mode,
+    required Customer customer,
+  }) async {
+    try {
+      // لا توجد عناصر محفوظة للفواتير حالياً (invoice_items) — سيتم استخدام بيانات مبسطة
+      // TODO: عند تنفيذ حفظ invoice_items يجب جلبها هنا
+      final invoiceRepo = ref.read(invoiceRepositoryProvider);
+      final items = await invoiceRepo.getInvoiceCartItems(invoice.id!);
+      final printer = PrinterFacade();
+      final user = UserService().currentUser;
+      await printer.printInvoice(
+        invoice: invoice,
+        items: items,
+        mode: mode,
+        customerName: customer.name,
+        cashierName: user?.fullName,
+      );
+    } catch (e) {
+      if (mounted) {
+        showCupertinoDialog(
+          context: context,
+          builder: (c) => CupertinoAlertDialog(
+            title: const Text('خطأ'),
+            content: Text('فشل في إعادة الطباعة: $e'),
+            actions: [
+              CupertinoDialogAction(
+                child: const Text('موافق'),
+                onPressed: () => Navigator.pop(c),
+              ),
+            ],
+          ),
+        );
+      }
+    }
   }
 }

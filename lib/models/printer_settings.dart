@@ -1,5 +1,8 @@
 enum PrinterType {
-  regular('طابعة عادية'),
+  usb('طابعة USB'),
+  network('طابعة شبكة'),
+  bluetooth('طابعة بلوتوث'),
+  windows('طابعة Windows'),
   thermal('طابعة حرارية');
 
   const PrinterType(this.displayName);
@@ -11,12 +14,16 @@ class PrinterSettings {
   final String name;
   final String address;
   final PrinterType type;
+  final int? vendorId;
+  final int? productId;
 
   PrinterSettings({
     this.id,
     required this.name,
     required this.address,
     required this.type,
+    this.vendorId,
+    this.productId,
   });
 
   Map<String, dynamic> toMap() {
@@ -25,6 +32,8 @@ class PrinterSettings {
       'name': name,
       'address': address,
       'type': type.name,
+      'vendorId': vendorId,
+      'productId': productId,
     };
   }
 
@@ -37,6 +46,8 @@ class PrinterSettings {
         (e) => e.name == map['type'],
         orElse: () => PrinterType.thermal,
       ),
+      vendorId: map['vendorId']?.toInt(),
+      productId: map['productId']?.toInt(),
     );
   }
 
@@ -45,18 +56,22 @@ class PrinterSettings {
     String? name,
     String? address,
     PrinterType? type,
+    int? vendorId,
+    int? productId,
   }) {
     return PrinterSettings(
       id: id ?? this.id,
       name: name ?? this.name,
       address: address ?? this.address,
       type: type ?? this.type,
+      vendorId: vendorId ?? this.vendorId,
+      productId: productId ?? this.productId,
     );
   }
 
   @override
   String toString() {
-    return 'PrinterSettings(id: $id, name: $name, address: $address, type: $type)';
+    return 'PrinterSettings(id: $id, name: $name, address: $address, type: $type, vendorId: $vendorId, productId: $productId)';
   }
 
   @override
@@ -66,11 +81,13 @@ class PrinterSettings {
         other.id == id &&
         other.name == name &&
         other.address == address &&
-        other.type == type;
+        other.type == type &&
+        other.vendorId == vendorId &&
+        other.productId == productId;
   }
 
   @override
   int get hashCode {
-    return id.hashCode ^ name.hashCode ^ address.hashCode ^ type.hashCode;
+    return id.hashCode ^ name.hashCode ^ address.hashCode ^ type.hashCode ^ vendorId.hashCode ^ productId.hashCode;
   }
 }

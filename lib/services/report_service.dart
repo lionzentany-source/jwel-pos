@@ -100,7 +100,7 @@ class ReportService {
                 ),
                 pw.SizedBox(height: 10),
 
-                pw.Table.fromTextArray(
+                pw.TableHelper.fromTextArray(
                   headers: ['رقم الفاتورة', 'التاريخ', 'العميل', 'الإجمالي'],
                   data: invoices
                       .map(
@@ -221,7 +221,7 @@ class ReportService {
                 ),
                 pw.SizedBox(height: 10),
 
-                pw.Table.fromTextArray(
+                pw.TableHelper.fromTextArray(
                   headers: ['رمز الصنف', 'الوزن', 'العيار', 'الحالة', 'السعر'],
                   data: items
                       .map(
@@ -336,7 +336,7 @@ class ReportService {
                 ),
                 pw.SizedBox(height: 10),
 
-                pw.Table.fromTextArray(
+                pw.TableHelper.fromTextArray(
                   headers: [
                     'الاسم',
                     'رقم الهاتف',
