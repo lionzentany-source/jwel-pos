@@ -1,7 +1,8 @@
 import 'package:flutter/cupertino.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../providers/user_provider.dart';
+import '../widgets/adaptive_scaffold.dart';
+import 'package:fluent_ui/fluent_ui.dart';
 import 'pos_screen.dart';
 
 class LoginScreen extends ConsumerStatefulWidget {
@@ -83,54 +84,59 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return CupertinoPageScaffold(
-      navigationBar: const CupertinoNavigationBar(middle: Text('Login')),
-      child: SafeArea(
-        child: KeyboardListener(
-          focusNode: FocusNode(), // Top-level focus node
-          onKeyEvent: (event) {
-            if (event is KeyDownEvent &&
-                event.logicalKey == LogicalKeyboardKey.enter) {
-              if (_usernameFocus.hasFocus) {
-                _passwordFocus.requestFocus();
-              } else if (_passwordFocus.hasFocus) {
-                _login();
-              }
-            }
-          },
-          child: Padding(
-            padding: const EdgeInsets.all(16.0),
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                CupertinoTextField(
-                  controller: _usernameController,
-                  focusNode: _usernameFocus,
-                  placeholder: 'Username',
-                  padding: const EdgeInsets.all(16.0),
-                  clearButtonMode: OverlayVisibilityMode.editing,
-                  textInputAction: TextInputAction.next,
-                  onSubmitted: (_) => _passwordFocus.requestFocus(),
-                ),
-                const SizedBox(height: 16.0),
-                CupertinoTextField(
-                  controller: _passwordController,
-                  focusNode: _passwordFocus,
-                  placeholder: 'Password',
-                  obscureText: true,
-                  padding: const EdgeInsets.all(16.0),
-                  clearButtonMode: OverlayVisibilityMode.editing,
-                  textInputAction: TextInputAction.done,
-                  onSubmitted: (_) => _login(),
-                ),
-                const SizedBox(height: 32.0),
-                _isLoading
-                    ? const CupertinoActivityIndicator()
-                    : CupertinoButton.filled(
-                        onPressed: _login,
-                        child: const Text('Login'),
-                      ),
-              ],
+    return Container(
+      color: const Color(0xfff6f8fa),
+      child: AdaptiveScaffold(
+        title: 'تسجيل الدخول',
+        body: Center(
+          child: Container(
+            constraints: const BoxConstraints(maxWidth: 400),
+            padding: const EdgeInsets.all(32),
+            child: AdaptiveCard(
+              backgroundColor: const Color(0xffffffff),
+              padding: const EdgeInsets.all(24),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    'أهلاً بك في النظام',
+                    style: FluentTheme.of(context).typography.title,
+                  ),
+                  const SizedBox(height: 24),
+                  InfoBar(
+                    title: const Text('تنبيه أول تشغيل'),
+                    content: const Text(
+                      'عند الدخول بحساب المدير لأول مرة سيتم طلب تعيين كلمة مرور جديدة لمرة واحدة.',
+                    ),
+                    severity: InfoBarSeverity.info,
+                  ),
+                  const SizedBox(height: 12),
+                  TextBox(
+                    controller: _usernameController,
+                    focusNode: _usernameFocus,
+                    placeholder: 'اسم المستخدم',
+                    autofocus: true,
+                    onSubmitted: (_) => _passwordFocus.requestFocus(),
+                  ),
+                  const SizedBox(height: 16),
+                  TextBox(
+                    controller: _passwordController,
+                    focusNode: _passwordFocus,
+                    placeholder: 'كلمة المرور',
+                    obscureText: true,
+                    onSubmitted: (_) => _login(),
+                  ),
+                  const SizedBox(height: 32),
+                  _isLoading
+                      ? const ProgressRing()
+                      : AdaptiveButton(
+                          text: 'دخول',
+                          color: const Color(0xFF0078D4),
+                          textColor: const Color(0xFFFFFFFF),
+                          onPressed: _login,
+                        ),
+                ],
+              ),
             ),
           ),
         ),

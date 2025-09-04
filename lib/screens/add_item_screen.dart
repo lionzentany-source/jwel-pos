@@ -1,12 +1,13 @@
-import 'package:flutter/cupertino.dart';
+import 'package:fluent_ui/fluent_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:image_picker/image_picker.dart';
 import 'dart:io';
 
+import '../models/material.dart' as posmat;
 import '../widgets/adaptive_scaffold.dart';
+import '../widgets/app_button.dart';
 import '../models/item.dart';
 import '../models/category.dart';
-import '../models/material.dart';
 import '../providers/item_provider.dart';
 import '../providers/category_provider.dart';
 import '../providers/material_provider.dart';
@@ -14,7 +15,6 @@ import '../providers/rfid_provider.dart';
 import '../providers/user_provider.dart';
 import '../services/user_activity_service.dart';
 import '../models/user_activity.dart';
-import '../widgets/adaptive_button.dart' as ab;
 
 extension Ignore on Future {
   void ignore() {}
@@ -38,7 +38,8 @@ class _AddItemScreenState extends ConsumerState<AddItemScreen> {
   final _rfidTagController = TextEditingController();
 
   Category? _selectedCategory;
-  Material? _selectedMaterial;
+  posmat.Material? _selectedMaterial;
+  ItemLocation _selectedLocation = ItemLocation.warehouse;
   File? _selectedImage;
   bool _isLoading = false;
   bool get _isEditMode => widget.item != null;
@@ -59,6 +60,7 @@ class _AddItemScreenState extends ConsumerState<AddItemScreen> {
     _stonePriceController.text = item.stonePrice.toString();
     _costPriceController.text = item.costPrice.toString();
     _rfidTagController.text = item.rfidTag ?? '';
+    _selectedLocation = item.location;
     if (item.imagePath != null) {
       _selectedImage = File(item.imagePath!);
     }
@@ -94,137 +96,135 @@ class _AddItemScreenState extends ConsumerState<AddItemScreen> {
   Widget build(BuildContext context) {
     final categoriesAsync = ref.watch(categoryNotifierProvider);
     final materialsAsync = ref.watch(materialNotifierProvider);
+    final theme = FluentTheme.of(context);
+
     return AdaptiveScaffold(
       title: _isEditMode ? 'تعديل الصنف' : 'إضافة صنف جديد',
-      body: GestureDetector(
-        onTap: () => FocusScope.of(context).unfocus(),
-        child: Form(
-          key: _formKey,
-          child: SingleChildScrollView(
-            padding: const EdgeInsets.all(16.0),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                _buildSectionTitle('الفئة'),
-                categoriesAsync.when(
-                  data: (categories) => _buildCategoryPicker(categories),
-                  loading: () => const CupertinoActivityIndicator(),
-                  error: (error, stack) => Text('خطأ في تحميل الفئات: $error'),
-                ),
-                const SizedBox(height: 20),
-                _buildSectionTitle('المادة الخام'),
-                materialsAsync.when(
-                  data: (materials) => _buildMaterialPicker(materials),
-                  loading: () => const CupertinoActivityIndicator(),
-                  error: (error, stack) => Text('خطأ في تحميل المواد: $error'),
-                ),
-                const SizedBox(height: 20),
-                _buildSectionTitle('الوزن (جرام)'),
-                CupertinoTextField(
-                  controller: _weightController,
-                  keyboardType: const TextInputType.numberWithOptions(
-                    decimal: true,
-                  ),
-                  placeholder: 'أدخل الوزن بالجرام',
-                  padding: const EdgeInsets.all(16),
-                ),
-                const SizedBox(height: 20),
-                _buildSectionTitle('العيار'),
-                CupertinoTextField(
-                  controller: _karatController,
-                  keyboardType: TextInputType.number,
-                  placeholder: 'أدخل العيار (مثل: 18، 21، 24)',
-                  padding: const EdgeInsets.all(16),
-                ),
-                const SizedBox(height: 20),
-                _buildSectionTitle('المصنعية (د.ل)'),
-                CupertinoTextField(
-                  controller: _workmanshipController,
-                  keyboardType: const TextInputType.numberWithOptions(
-                    decimal: true,
-                  ),
-                  placeholder: 'أدخل قيمة المصنعية',
-                  padding: const EdgeInsets.all(16),
-                ),
-                const SizedBox(height: 20),
-                _buildSectionTitle('سعر الأحجار (د.ل) - اختياري'),
-                CupertinoTextField(
-                  controller: _stonePriceController,
-                  keyboardType: const TextInputType.numberWithOptions(
-                    decimal: true,
-                  ),
-                  placeholder: 'أدخل سعر الأحجار إن وجدت',
-                  padding: const EdgeInsets.all(16),
-                ),
-                const SizedBox(height: 20),
-                _buildSectionTitle('سعر التكلفة (د.ل)'),
-                CupertinoTextField(
-                  controller: _costPriceController,
-                  keyboardType: const TextInputType.numberWithOptions(
-                    decimal: true,
-                  ),
-                  placeholder: 'أدخل سعر التكلفة الفعلي',
-                  padding: const EdgeInsets.all(16),
-                ),
-                const SizedBox(height: 20),
-                _buildSectionTitle('بطاقة RFID (اختياري)'),
-                Row(
+      backgroundColor: theme.scaffoldBackgroundColor,
+      showBackButton: false,
+      body: Form(
+        key: _formKey,
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.all(16.0),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              AdaptiveCard(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    Expanded(
-                      child: CupertinoTextField(
-                        controller: _rfidTagController,
-                        placeholder: 'امسح بطاقة RFID أو أدخلها يدوياً',
-                        padding: const EdgeInsets.all(16),
-                      ),
+                    _buildSectionTitle('الفئة'),
+                    categoriesAsync.when(
+                      data: (categories) => _buildCategoryPicker(categories),
+                      loading: () => const Center(child: ProgressRing()),
+                      error: (error, stack) =>
+                          Text('خطأ في تحميل الفئات: $error'),
                     ),
-                    const SizedBox(width: 10),
-                    CupertinoButton(
-                      padding: EdgeInsets.zero,
-                      onPressed: () async {
-                        final rfidService = ref.read(rfidServiceProvider);
-                        final tag = await rfidService.readSingleTag();
-                        if (!context.mounted) return;
-                        if (tag != null) {
-                          if (!context.mounted) return;
-                          setState(() {
-                            _rfidTagController.text = tag;
-                          });
-                        } else if (context.mounted) {
-                          showCupertinoDialog(
-                            context: context,
-                            builder: (dialogContext) => CupertinoAlertDialog(
-                              title: const Text('خطأ في قراءة RFID'),
-                              content: const Text(
-                                'لم يتم العثور على بطاقة RFID أو حدث خطأ.',
-                              ),
-                              actions: [
-                                CupertinoDialogAction(
-                                  child: const Text('موافق'),
-                                  onPressed: () => Navigator.pop(dialogContext),
-                                ),
-                              ],
-                            ),
-                          );
-                        }
-                      },
-                      child: const Icon(CupertinoIcons.barcode_viewfinder),
+                    const SizedBox(height: 20),
+                    _buildSectionTitle('المادة الخام'),
+                    materialsAsync.when(
+                      data: (materials) => _buildMaterialPicker(materials),
+                      loading: () => const Center(child: ProgressRing()),
+                      error: (error, stack) =>
+                          Text('خطأ في تحميل المواد: $error'),
+                    ),
+                    const SizedBox(height: 20),
+                    _buildSectionTitle('الوزن (جرام)'),
+                    TextBox(
+                      controller: _weightController,
+                      keyboardType: const TextInputType.numberWithOptions(
+                        decimal: true,
+                      ),
+                      placeholder: 'أدخل الوزن بالجرام',
+                    ),
+                    const SizedBox(height: 20),
+                    _buildSectionTitle('العيار'),
+                    TextBox(
+                      controller: _karatController,
+                      keyboardType: TextInputType.number,
+                      placeholder: 'أدخل العيار (مثل: 18، 21، 24)',
+                    ),
+                    const SizedBox(height: 20),
+                    _buildSectionTitle('المصنعية (د.ل)'),
+                    TextBox(
+                      controller: _workmanshipController,
+                      keyboardType: const TextInputType.numberWithOptions(
+                        decimal: true,
+                      ),
+                      placeholder: 'أدخل قيمة المصنعية',
+                    ),
+                    const SizedBox(height: 20),
+                    _buildSectionTitle('سعر الأحجار (د.ل) - اختياري'),
+                    TextBox(
+                      controller: _stonePriceController,
+                      keyboardType: const TextInputType.numberWithOptions(
+                        decimal: true,
+                      ),
+                      placeholder: 'أدخل سعر الأحجار إن وجدت',
+                    ),
+                    const SizedBox(height: 20),
+                    _buildSectionTitle('سعر التكلفة (د.ل)'),
+                    TextBox(
+                      controller: _costPriceController,
+                      keyboardType: const TextInputType.numberWithOptions(
+                        decimal: true,
+                      ),
+                      placeholder: 'أدخل سعر التكلفة الفعلي',
+                    ),
+                    const SizedBox(height: 20),
+                    _buildSectionTitle('مكان الصنف'),
+                    _buildLocationPicker(),
+                    const SizedBox(height: 20),
+
+                    _buildSectionTitle('بطاقة RFID (اختياري)'),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: TextBox(
+                            controller: _rfidTagController,
+                            placeholder: 'امسح بطاقة RFID أو أدخلها يدوياً',
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        AppButton.secondary(
+                          text: 'مسح',
+                          icon: FluentIcons.search,
+                          onPressed: _isLoading
+                              ? null
+                              : () {
+                                  final rfidService = ref.read(
+                                    rfidServiceProvider,
+                                  );
+                                  rfidService.readSingleTag().then((tag) {
+                                    if (!mounted) return;
+                                    if (tag != null) {
+                                      setState(() {
+                                        _rfidTagController.text = tag;
+                                      });
+                                    } else {
+                                      _showError(
+                                        'لم يتم العثور على بطاقة RFID أو حدث خطأ.',
+                                      );
+                                    }
+                                  });
+                                },
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 20),
+                    _buildSectionTitle('صورة المنتج'),
+                    _buildImagePicker(),
+                    const SizedBox(height: 30),
+                    FilledButton(
+                      onPressed: _isLoading ? null : _saveItem,
+                      child: _isLoading
+                          ? const ProgressRing()
+                          : const Text('حفظ الصنف'),
                     ),
                   ],
                 ),
-                const SizedBox(height: 20),
-                _buildSectionTitle('صورة المنتج'),
-                _buildImagePicker(),
-                const SizedBox(height: 30),
-                ab.AdaptiveButton(
-                  label: _isLoading ? 'جاري الحفظ...' : 'حفظ الصنف',
-                  onPressed: _isLoading
-                      ? () {}
-                      : () {
-                          _saveItem().ignore();
-                        },
-                ),
-              ],
-            ),
+              ),
+            ],
           ),
         ),
       ),
@@ -232,58 +232,47 @@ class _AddItemScreenState extends ConsumerState<AddItemScreen> {
   }
 
   Widget _buildSectionTitle(String title) {
+    final theme = FluentTheme.of(context);
     return Padding(
       padding: const EdgeInsets.only(bottom: 8.0),
-      child: Text(
-        title,
-        style: const TextStyle(
-          fontSize: 18,
-          fontWeight: FontWeight.w600,
-          color: CupertinoColors.label,
-        ),
-      ),
+      child: Text(title, style: theme.typography.subtitle),
     );
   }
 
   Widget _buildCategoryPicker(List<Category> categories) {
-    return CupertinoButton(
-      padding: EdgeInsets.zero,
-      onPressed: () => _showCategoryPicker(categories),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          Text(
-            _selectedCategory?.nameAr ?? 'اختر الفئة',
-            style: TextStyle(
-              color: _selectedCategory != null
-                  ? CupertinoColors.label
-                  : CupertinoColors.placeholderText,
-            ),
-          ),
-          const Icon(CupertinoIcons.chevron_down),
-        ],
-      ),
+    return ComboBox<Category>(
+      value: _selectedCategory,
+      placeholder: const Text('اختر الفئة'),
+      isExpanded: true,
+      items: [
+        for (final category in categories)
+          ComboBoxItem<Category>(value: category, child: Text(category.nameAr)),
+      ],
+      onChanged: (value) {
+        setState(() {
+          _selectedCategory = value;
+        });
+      },
     );
   }
 
-  Widget _buildMaterialPicker(List<Material> materials) {
-    return CupertinoButton(
-      padding: EdgeInsets.zero,
-      onPressed: () => _showMaterialPicker(materials),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          Text(
-            _selectedMaterial?.nameAr ?? 'اختر المادة الخام',
-            style: TextStyle(
-              color: _selectedMaterial != null
-                  ? CupertinoColors.label
-                  : CupertinoColors.placeholderText,
-            ),
+  Widget _buildMaterialPicker(List<posmat.Material> materials) {
+    return ComboBox<posmat.Material>(
+      value: _selectedMaterial,
+      placeholder: const Text('اختر المادة الخام'),
+      isExpanded: true,
+      items: [
+        for (final material in materials)
+          ComboBoxItem<posmat.Material>(
+            value: material,
+            child: Text(material.nameAr),
           ),
-          const Icon(CupertinoIcons.chevron_down),
-        ],
-      ),
+      ],
+      onChanged: (value) {
+        setState(() {
+          _selectedMaterial = value;
+        });
+      },
     );
   }
 
@@ -296,7 +285,7 @@ class _AddItemScreenState extends ConsumerState<AddItemScreen> {
             width: double.infinity,
             decoration: BoxDecoration(
               borderRadius: BorderRadius.circular(8),
-              color: CupertinoColors.systemGrey6,
+              color: FluentTheme.of(context).scaffoldBackgroundColor,
             ),
             child: ClipRRect(
               borderRadius: BorderRadius.circular(8),
@@ -305,137 +294,30 @@ class _AddItemScreenState extends ConsumerState<AddItemScreen> {
           ),
           const SizedBox(height: 10),
         ],
-        ab.AdaptiveButton(
-          label: _selectedImage != null ? 'تغيير الصورة' : 'اختيار صورة',
-          onPressed: _isLoading
-              ? () {}
-              : () {
-                  _pickImage();
-                },
+        AppButton.secondary(
+          text: _selectedImage != null ? 'تغيير الصورة' : 'اختيار صورة',
+          icon: FluentIcons.camera,
+          onPressed: _isLoading ? null : _pickImage,
         ),
       ],
     );
   }
 
-  void _showCategoryPicker(List<Category> categories) {
-    showCupertinoModalPopup(
-      context: context,
-      builder: (context) => Container(
-        height: 250,
-        color: CupertinoColors.systemBackground,
-        child: Column(
-          children: [
-            Container(
-              height: 56,
-              decoration: const BoxDecoration(
-                border: Border(
-                  bottom: BorderSide(color: CupertinoColors.separator),
-                ),
-              ),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                textDirection: TextDirection.rtl,
-                children: [
-                  CupertinoButton(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 20,
-                      vertical: 6,
-                    ),
-                    child: const Text('إلغاء', overflow: TextOverflow.visible),
-                    onPressed: () => Navigator.pop(context),
-                  ),
-                  const Text(
-                    'اختر الفئة',
-                    style: TextStyle(fontWeight: FontWeight.w600),
-                  ),
-                  CupertinoButton(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 20,
-                      vertical: 6,
-                    ),
-                    child: const Text('تم', overflow: TextOverflow.visible),
-                    onPressed: () => Navigator.pop(context),
-                  ),
-                ],
-              ),
-            ),
-            Expanded(
-              child: CupertinoPicker(
-                itemExtent: 40,
-                onSelectedItemChanged: (index) {
-                  setState(() {
-                    _selectedCategory = categories[index];
-                  });
-                },
-                children: categories
-                    .map((category) => Center(child: Text(category.nameAr)))
-                    .toList(),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  void _showMaterialPicker(List<Material> materials) {
-    showCupertinoModalPopup(
-      context: context,
-      builder: (context) => Container(
-        height: 250,
-        color: CupertinoColors.systemBackground,
-        child: Column(
-          children: [
-            Container(
-              height: 56,
-              decoration: const BoxDecoration(
-                border: Border(
-                  bottom: BorderSide(color: CupertinoColors.separator),
-                ),
-              ),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                textDirection: TextDirection.rtl,
-                children: [
-                  CupertinoButton(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 20,
-                      vertical: 6,
-                    ),
-                    child: const Text('إلغاء', overflow: TextOverflow.visible),
-                    onPressed: () => Navigator.pop(context),
-                  ),
-                  const Text(
-                    'اختر المادة',
-                    style: TextStyle(fontWeight: FontWeight.w600),
-                  ),
-                  CupertinoButton(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 20,
-                      vertical: 6,
-                    ),
-                    child: const Text('تم', overflow: TextOverflow.visible),
-                    onPressed: () => Navigator.pop(context),
-                  ),
-                ],
-              ),
-            ),
-            Expanded(
-              child: CupertinoPicker(
-                itemExtent: 40,
-                onSelectedItemChanged: (index) {
-                  setState(() {
-                    _selectedMaterial = materials[index];
-                  });
-                },
-                children: materials
-                    .map((material) => Center(child: Text(material.nameAr)))
-                    .toList(),
-              ),
-            ),
-          ],
-        ),
-      ),
+  Widget _buildLocationPicker() {
+    return ComboBox<ItemLocation>(
+      value: _selectedLocation,
+      placeholder: const Text('اختر مكان الصنف'),
+      isExpanded: true,
+      items: [
+        for (final loc in ItemLocation.values)
+          ComboBoxItem<ItemLocation>(value: loc, child: Text(loc.displayName)),
+      ],
+      onChanged: (value) {
+        if (value == null) return;
+        setState(() {
+          _selectedLocation = value;
+        });
+      },
     );
   }
 
@@ -458,39 +340,43 @@ class _AddItemScreenState extends ConsumerState<AddItemScreen> {
       final itemNotifier = ref.read(itemNotifierProvider.notifier);
       final repository = ref.read(itemRepositoryProvider);
 
-      // تنسيق بطاقة RFID (إزالة الفراغات وتحويلها لأحرف كبيرة)
       String? normalizedTag;
       if (_rfidTagController.text.trim().isNotEmpty) {
         normalizedTag = _rfidTagController.text.trim().toUpperCase();
       }
 
-      // التحقق من عدم تكرار بطاقة RFID قبل محاولة الحفظ لتفادي خطأ UNIQUE
       if (normalizedTag != null) {
         final existing = await repository.getItemByRfidTag(normalizedTag);
         if (existing != null) {
-          // في وضع التعديل: إذا كانت نفس البطاقة لنفس الصنف فمسموح، غير ذلك خطأ
-          if (!_isEditMode || (_isEditMode && existing.id != widget.item!.id)) {
-            if (mounted) {
-              setState(() {
-                _isLoading = false;
-              });
-              showCupertinoDialog(
-                context: context,
-                builder: (context) => CupertinoAlertDialog(
-                  title: const Text('بطاقة مكررة'),
-                  content: Text(
-                    'هذه البطاقة مستخدمة بالفعل مع الصنف: ${existing.sku}\nلا يمكن ربطها بصنف آخر.',
-                  ),
-                  actions: [
-                    CupertinoDialogAction(
-                      child: const Text('موافق'),
-                      onPressed: () => Navigator.pop(context),
-                    ),
-                  ],
-                ),
+          final isSameItemInEdit =
+              _isEditMode && existing.id == widget.item!.id;
+          if (!isSameItemInEdit) {
+            if (existing.status == ItemStatus.sold) {
+              final cleared = Item(
+                id: existing.id,
+                sku: existing.sku,
+                categoryId: existing.categoryId,
+                materialId: existing.materialId,
+                weightGrams: existing.weightGrams,
+                karat: existing.karat,
+                workmanshipFee: existing.workmanshipFee,
+                stonePrice: existing.stonePrice,
+                costPrice: existing.costPrice,
+                imagePath: existing.imagePath,
+                rfidTag: null,
+                status: existing.status,
+                createdAt: existing.createdAt,
               );
+              await repository.updateItem(cleared);
+            } else {
+              if (mounted) {
+                setState(() => _isLoading = false);
+                _showError(
+                  'هذه البطاقة مستخدمة بالفعل مع الصنف: ${existing.sku}\nلا يمكن ربطها بصنف آخر (الحالة الحالية: ${existing.status.displayName}).',
+                );
+              }
+              return;
             }
-            return; // إيقاف الحفظ
           }
         }
       }
@@ -515,6 +401,7 @@ class _AddItemScreenState extends ConsumerState<AddItemScreen> {
         imagePath: _selectedImage?.path,
         status: _isEditMode ? widget.item!.status : ItemStatus.inStock,
         rfidTag: normalizedTag,
+        location: _selectedLocation,
         createdAt: _isEditMode ? widget.item!.createdAt : DateTime.now(),
       );
       if (_isEditMode) {
@@ -523,7 +410,6 @@ class _AddItemScreenState extends ConsumerState<AddItemScreen> {
         await itemNotifier.addItem(item);
       }
 
-      // تسجيل النشاط
       final currentUser = ref.read(userNotifierProvider).value;
       if (currentUser != null) {
         await UserActivityService().logActivity(
@@ -545,7 +431,6 @@ class _AddItemScreenState extends ConsumerState<AddItemScreen> {
         );
       }
 
-      // تحديث جميع المزودات المرتبطة
       itemNotifier.refresh();
       ref.invalidate(itemsProvider);
       ref.invalidate(itemsByStatusProvider);
@@ -553,39 +438,13 @@ class _AddItemScreenState extends ConsumerState<AddItemScreen> {
 
       if (!mounted) return;
 
-      // إظهار رسالة نجاح والعودة مباشرة
       Navigator.pop(context);
 
-      // إظهار رسالة نجاح بسيطة
-      showCupertinoDialog(
-        context: context,
-        builder: (context) => CupertinoAlertDialog(
-          title: const Text('تم بنجاح'),
-          content: Text('تم ${_isEditMode ? 'تحديث' : 'حفظ'} الصنف $sku'),
-          actions: [
-            CupertinoDialogAction(
-              child: const Text('موافق'),
-              onPressed: () => Navigator.pop(context),
-            ),
-          ],
-        ),
-      );
+      _showSuccessMessage('تم ${_isEditMode ? 'تحديث' : 'حفظ'} الصنف $sku');
     } catch (error) {
       if (!mounted) return;
-      showCupertinoDialog(
-        context: context,
-        builder: (context) => CupertinoAlertDialog(
-          title: const Text('خطأ'),
-          content: Text(
-            'حدث خطأ أثناء حفظ الصنف: $error\nإذا كانت المشكلة تتعلق ببطاقة RFID مكررة، تأكد من عدم استخدامها في صنف آخر.',
-          ),
-          actions: [
-            CupertinoDialogAction(
-              child: const Text('موافق'),
-              onPressed: () => Navigator.pop(context),
-            ),
-          ],
-        ),
+      _showError(
+        'حدث خطأ أثناء حفظ الصنف: $error\nإذا كانت المشكلة تتعلق ببطاقة RFID مكررة، تأكد من عدم استخدامها في صنف آخر.',
       );
     } finally {
       if (mounted) {
@@ -625,13 +484,30 @@ class _AddItemScreenState extends ConsumerState<AddItemScreen> {
 
   void _showError(String message) {
     if (!mounted) return;
-    showCupertinoDialog(
+    showDialog(
       context: context,
-      builder: (context) => CupertinoAlertDialog(
+      builder: (context) => ContentDialog(
         title: const Text('خطأ في البيانات'),
         content: Text(message),
         actions: [
-          CupertinoDialogAction(
+          Button(
+            child: const Text('موافق'),
+            onPressed: () => Navigator.pop(context),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showSuccessMessage(String message) {
+    if (!mounted) return;
+    showDialog(
+      context: context,
+      builder: (context) => ContentDialog(
+        title: const Text('تم بنجاح'),
+        content: Text(message),
+        actions: [
+          Button(
             child: const Text('موافق'),
             onPressed: () => Navigator.pop(context),
           ),

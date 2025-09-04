@@ -1,146 +1,174 @@
 import 'package:flutter/cupertino.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:fluent_ui/fluent_ui.dart';
+import 'dart:async';
 
 import '../widgets/adaptive_scaffold.dart';
 import '../models/item.dart';
 import '../providers/item_provider.dart';
-import '../providers/rfid_provider.dart';
+import '../services/rfid_service.dart';
+import '../providers/rfid_role_reader_provider.dart';
+import '../services/rfid_device_assignments.dart'; // RfidRole enum
 import '../providers/settings_provider.dart';
 import '../providers/material_provider.dart';
+import '../widgets/app_button.dart';
 
 class InventoryAuditScreen extends ConsumerStatefulWidget {
   const InventoryAuditScreen({super.key});
 
   @override
-  ConsumerState<InventoryAuditScreen> createState() => _InventoryAuditScreenState();
+  ConsumerState<InventoryAuditScreen> createState() =>
+      _InventoryAuditScreenState();
 }
 
 class _InventoryAuditScreenState extends ConsumerState<InventoryAuditScreen> {
   final Set<int> _scannedItemIds = {};
   bool _isScanning = false;
   String? _debugMessage;
+  bool _rfidListenerAttached = false;
+  RfidServiceReal? _reader;
+  StreamSubscription<String>? _tagSub;
+
+  @override
+  void dispose() {
+    try {
+      _reader?.stopScanning();
+    } catch (_) {}
+    try {
+      _tagSub?.cancel();
+    } catch (_) {}
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
     final itemsAsync = ref.watch(itemsProvider);
-    final goldPriceAsync = ref.watch(goldPriceProvider);
+    final goldPrice = ref.watch(goldPriceProvider);
 
-    // الاستماع لقراءة البطاقات
-    ref.listen<AsyncValue<String>>(rfidTagProvider, (previous, next) {
-      next.whenData((tagId) {
+    // الاستماع لقراءة البطاقات (مرة واحدة)
+    if (!_rfidListenerAttached && _reader != null) {
+      _rfidListenerAttached = true;
+      _tagSub = _reader!.tagStream.listen((tagId) {
         if (_isScanning && tagId.isNotEmpty) {
-          setState(() {
-            _debugMessage = 'تم قراءة البطاقة: $tagId';
-          });
+          setState(() => _debugMessage = 'تم قراءة البطاقة: $tagId');
           _handleScannedTag(tagId);
-          // إخفاء الرسالة بعد 3 ثوان
           Future.delayed(const Duration(seconds: 3), () {
             if (mounted) {
-              setState(() {
-                _debugMessage = null;
-              });
+              setState(() => _debugMessage = null);
             }
           });
         }
       });
-    });
-
-    return AdaptiveScaffold(
-      title: 'جرد المخزون',
-      body: Stack(
-        children: [
-          Column(
-            children: [
-          // إحصائيات الجرد
-          itemsAsync.when(
-            data: (items) => goldPriceAsync.when(
-              data: (goldPrice) => _buildAuditStats(items, goldPrice),
-              loading: () => const CupertinoActivityIndicator(),
-              error: (_, __) => const SizedBox.shrink(),
-            ),
-            loading: () => const CupertinoActivityIndicator(),
-            error: (_, __) => const SizedBox.shrink(),
-          ),
-
-          const SizedBox(height: 16),
-
-          // أزرار التحكم
-          _buildControlButtons(),
-          
-          const SizedBox(height: 16),
-
-          // قائمة الأصناف
-          Expanded(
-            child: itemsAsync.when(
-              data: (items) => _buildItemsList(items),
-              loading: () => const Center(child: CupertinoActivityIndicator()),
-              error: (error, stack) => Center(
-                child: Text('خطأ في تحميل البيانات: $error'),
-              ),
-            ),
-          ),
-        ],
-      ),
-          // نافذة تصحيح RFID
-          if (_debugMessage != null)
-            Positioned(
-              top: 20,
-              left: 20,
-              right: 20,
-              child: Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: CupertinoColors.activeGreen,
-                  borderRadius: BorderRadius.circular(8),
-                  boxShadow: [
-                    BoxShadow(
-                      color: CupertinoColors.black.withValues(alpha: 0.2),
-                      blurRadius: 8,
-                      offset: const Offset(0, 2),
-                    ),
-                  ],
+    }
+    return Container(
+      color: Color(0xfff6f8fa), // خلفية موحدة
+      child: AdaptiveScaffold(
+        title: 'جرد المخزون',
+        body: Stack(
+          children: [
+            Column(
+              children: [
+                // إحصائيات الجرد
+                itemsAsync.when(
+                  data: (items) => _buildAuditStats(items, goldPrice),
+                  loading: () => const CupertinoActivityIndicator(),
+                  error: (_, __) => const SizedBox.shrink(),
                 ),
-                child: Row(
-                  children: [
-                    const Icon(
-                      CupertinoIcons.checkmark_circle_fill,
-                      color: CupertinoColors.white,
-                      size: 20,
-                    ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Text(
-                        _debugMessage!,
-                        style: const TextStyle(
-                          color: CupertinoColors.white,
-                          fontWeight: FontWeight.w600,
+
+                const SizedBox(height: 16),
+
+                // أزرار التحكم
+                _buildControlButtons(),
+
+                const SizedBox(height: 16),
+
+                // قائمة الأصناف
+                Expanded(
+                  child: itemsAsync.when(
+                    data: (items) => _buildItemsList(items),
+                    loading: () =>
+                        const Center(child: CupertinoActivityIndicator()),
+                    error: (error, stack) =>
+                        Center(child: Text('خطأ في تحميل البيانات: $error')),
+                  ),
+                ),
+              ],
+            ),
+            // نافذة تصحيح RFID
+            if (_debugMessage != null)
+              Positioned(
+                top: 20,
+                left: 20,
+                right: 20,
+                child: Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: CupertinoColors.activeGreen,
+                    borderRadius: BorderRadius.circular(8),
+                    boxShadow: [
+                      BoxShadow(
+                        color: CupertinoColors.black.withValues(alpha: 0.2),
+                        blurRadius: 8,
+                        offset: const Offset(0, 2),
+                      ),
+                    ],
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(
+                        CupertinoIcons.checkmark_circle_fill,
+                        color: CupertinoColors.white,
+                        size: 20,
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          _debugMessage!,
+                          style: const TextStyle(
+                            color: CupertinoColors.white,
+                            fontWeight: FontWeight.w600,
+                          ),
                         ),
                       ),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
               ),
-            ),
-        ],
+          ],
+        ),
       ),
     );
   }
 
   Widget _buildAuditStats(List<Item> items, double goldPrice) {
     final materialsState = ref.watch(materialNotifierProvider);
-    final inStockItems = items.where((item) => item.status == ItemStatus.inStock).toList();
+    final inStockItems = items
+        .where((item) => item.status == ItemStatus.inStock)
+        .toList();
     final scannedCount = _scannedItemIds.length;
     final unscannedCount = inStockItems.length - scannedCount;
-    
-    final scannedItems = inStockItems.where((item) => _scannedItemIds.contains(item.id)).toList();
-    final mats = materialsState.maybeWhen(data: (list) => list, orElse: () => null);
+
+    final scannedItems = inStockItems
+        .where((item) => _scannedItemIds.contains(item.id))
+        .toList();
+    final mats = materialsState.maybeWhen(
+      data: (list) => list,
+      orElse: () => null,
+    );
     final totalScannedValue = scannedItems.fold<double>(0.0, (sum, item) {
       double? materialPrice;
       if (mats != null) {
-        final mat = mats.firstWhere((m) => m.id == item.materialId, orElse: () => mats.first);
+        final mat = mats.firstWhere(
+          (m) => m.id == item.materialId,
+          orElse: () => mats.first,
+        );
         if (mat.isVariable) materialPrice = mat.pricePerGram;
       }
-      return sum + item.calculateTotalPrice(goldPrice, materialSpecificPrice: materialPrice);
+      return sum +
+          item.calculateTotalPrice(
+            goldPrice,
+            materialSpecificPrice: materialPrice,
+          );
     });
 
     return Container(
@@ -210,17 +238,18 @@ class _InventoryAuditScreenState extends ConsumerState<InventoryAuditScreen> {
       child: Row(
         children: [
           Expanded(
-            child: CupertinoButton.filled(
+            child: AppButton.primary(
+              text: 'بدء القراءة',
+              icon: FluentIcons.play_solid,
               onPressed: !_isScanning ? _startScanning : null,
-              child: const Text('بدء القراءة'),
             ),
           ),
           const SizedBox(width: 16),
           Expanded(
-            child: CupertinoButton(
-              color: CupertinoColors.systemRed,
+            child: AppButton.destructive(
+              text: 'إيقاف القراءة',
+              icon: FluentIcons.stop_solid,
               onPressed: _isScanning ? _stopScanning : null,
-              child: const Text('إيقاف القراءة'),
             ),
           ),
         ],
@@ -229,13 +258,15 @@ class _InventoryAuditScreenState extends ConsumerState<InventoryAuditScreen> {
   }
 
   Widget _buildItemsList(List<Item> items) {
-    final inStockItems = items.where((item) => item.status == ItemStatus.inStock).toList();
-    
+    final inStockItems = items
+        .where((item) => item.status == ItemStatus.inStock)
+        .toList();
+
     // ترتيب الأصناف: غير المجرودة أولاً، المجرودة في الأسفل
     inStockItems.sort((a, b) {
       final aScanned = _scannedItemIds.contains(a.id);
       final bScanned = _scannedItemIds.contains(b.id);
-      
+
       if (!aScanned && bScanned) return -1;
       if (aScanned && !bScanned) return 1;
       return a.sku.compareTo(b.sku);
@@ -245,10 +276,7 @@ class _InventoryAuditScreenState extends ConsumerState<InventoryAuditScreen> {
       return const Center(
         child: Text(
           'لا توجد أصناف في المخزون للجرد',
-          style: TextStyle(
-            fontSize: 18,
-            color: CupertinoColors.secondaryLabel,
-          ),
+          style: TextStyle(fontSize: 18, color: CupertinoColors.secondaryLabel),
         ),
       );
     }
@@ -259,7 +287,7 @@ class _InventoryAuditScreenState extends ConsumerState<InventoryAuditScreen> {
       itemBuilder: (context, index) {
         final item = inStockItems[index];
         final isScanned = _scannedItemIds.contains(item.id);
-        
+
         return Container(
           margin: const EdgeInsets.only(bottom: 8),
           padding: const EdgeInsets.all(16),
@@ -267,7 +295,7 @@ class _InventoryAuditScreenState extends ConsumerState<InventoryAuditScreen> {
             color: CupertinoColors.systemBackground,
             borderRadius: BorderRadius.circular(12),
             border: Border.all(
-              color: isScanned 
+              color: isScanned
                   ? CupertinoColors.activeGreen.withValues(alpha: 0.3)
                   : CupertinoColors.systemRed.withValues(alpha: 0.3),
               width: 1,
@@ -300,14 +328,12 @@ class _InventoryAuditScreenState extends ConsumerState<InventoryAuditScreen> {
                 padding: const EdgeInsets.all(8),
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
-                  color: isScanned 
+                  color: isScanned
                       ? CupertinoColors.activeGreen
                       : CupertinoColors.systemRed,
                 ),
                 child: Icon(
-                  isScanned 
-                      ? CupertinoIcons.checkmark
-                      : CupertinoIcons.xmark,
+                  isScanned ? CupertinoIcons.checkmark : CupertinoIcons.xmark,
                   color: CupertinoColors.white,
                   size: 16,
                 ),
@@ -321,11 +347,21 @@ class _InventoryAuditScreenState extends ConsumerState<InventoryAuditScreen> {
 
   Future<void> _startScanning() async {
     try {
-      setState(() {
-        _isScanning = true;
-      });
-      await ref.read(rfidNotifierProvider.notifier).connect();
-      await ref.read(rfidNotifierProvider.notifier).startScanning();
+      if (_reader == null) {
+        final r = await ref.read(
+          rfidReaderForRoleProvider(RfidRole.inventory).future,
+        );
+        if (!mounted) return;
+        setState(() => _reader = r);
+      }
+      if (_reader!.currentStatus == RfidReaderStatus.connected ||
+          _reader!.currentStatus == RfidReaderStatus.scanning) {
+        await _reader!.startScanning();
+        setState(() => _isScanning = true);
+      } else {
+        setState(() => _isScanning = false);
+        _debugMessage = 'القارئ (الجرد) غير متصل. عيّن الجهاز من الإعدادات.';
+      }
     } catch (e) {
       setState(() {
         _isScanning = false;
@@ -335,20 +371,18 @@ class _InventoryAuditScreenState extends ConsumerState<InventoryAuditScreen> {
 
   Future<void> _stopScanning() async {
     try {
-      await ref.read(rfidNotifierProvider.notifier).stopScanning();
-      setState(() {
-        _isScanning = false;
-      });
-    } catch (e) {
-      // تجاهل الأخطاء
-    }
+      await _reader?.stopScanning();
+    } catch (_) {}
+    setState(() {
+      _isScanning = false;
+    });
   }
 
   void _handleScannedTag(String tagId) async {
     try {
       final itemRepository = ref.read(itemRepositoryProvider);
       final allItems = await itemRepository.getAllItems();
-      
+
       final item = allItems.firstWhere(
         (item) => item.rfidTag == tagId && item.status == ItemStatus.inStock,
         orElse: () => Item(

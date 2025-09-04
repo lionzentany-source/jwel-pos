@@ -43,3 +43,17 @@ app.*.map.json
 /android/app/debug
 /android/app/profile
 /android/app/release
+
+# Additional project artifacts to ignore
+/Release/
+/dist/
+/coverage/
+android/build/
+ios/Pods/
+ios/.symlinks/
+macos/Pods/
+linux/build/
+windows/build/
+web/.dart_tool/
+# External drivers/tools and extracted binaries
+/driver and tool/

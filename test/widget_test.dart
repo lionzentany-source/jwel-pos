@@ -5,7 +5,7 @@
 // gestures. You can also use WidgetTester to find child widgets in the widget
 // tree, read text, and verify that the values of widget properties are correct.
 
-import 'package:flutter/cupertino.dart';
+import 'package:fluent_ui/fluent_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -25,6 +25,6 @@ void main() {
     await tester.pumpWidget(const ProviderScope(child: JweApp()));
 
     // Verify that the app loads without errors
-    expect(find.byType(CupertinoApp), findsOneWidget);
+    expect(find.byType(FluentApp), findsOneWidget);
   });
 }

@@ -4,6 +4,8 @@ import 'package:printing/printing.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:flutter/services.dart' show rootBundle;
+import '../models/invoice_render_data.dart';
+import '../models/cart_item.dart';
 
 class RealPrinterService {
   static final RealPrinterService _instance = RealPrinterService._internal();
@@ -223,7 +225,7 @@ class RealPrinterService {
     debugPrint('1️⃣ افتح Command Prompt كمدير (Run as Administrator)');
     debugPrint('2️⃣ نفذ الأوامر التالية بالترتيب:');
     debugPrint('   net stop spooler');
-    debugPrint('   del /Q /F C:\\Windows\\System32\\spool\\PRINTERS\\*');
+    debugPrint('   del /Q /F C:WindowsSystem32spoolPRINTERS*');
     debugPrint('   net start spooler');
     debugPrint('3️⃣ أو من Services.msc:');
     debugPrint('   - اضغط Win+R واكتب services.msc');
@@ -265,10 +267,10 @@ class RealPrinterService {
   /// طباعة فاتورة على طابعة محددة
   Future<bool> printInvoice(
     Printer printer,
-    Map<String, dynamic> invoiceData,
+    InvoiceRenderData invoiceRenderData,
   ) async {
     try {
-      final invoiceContent = _generateInvoicePdf(invoiceData);
+      final invoiceContent = await _generateInvoicePdf(invoiceRenderData);
       await Printing.directPrintPdf(
         printer: printer,
         onLayout: (format) => invoiceContent,
@@ -280,9 +282,6 @@ class RealPrinterService {
       return false;
     }
   }
-
-  // نسخة جديدة تعتمد على InvoiceRenderData مستقبلاً (للتكامل مع الواجهة الموحدة)
-  // TODO: استبدال جميع الاستدعاءات الخارجية بهذه الدالة ثم إزالة نسخة الخريطة القديمة.
 
   /// الحصول على الطابعة الافتراضية
   Future<Printer?> getDefaultPrinter() async {
@@ -317,6 +316,51 @@ class RealPrinterService {
     }
   }
 
+  /// الحصول على طابعة بالاسم (مطابقة غير حساسة لحالة الأحرف)
+  Future<Printer?> getPrinterByName(String name) async {
+    try {
+      final printers = await getAvailablePrinters();
+      if (printers.isEmpty) return null;
+      final lower = name.trim().toLowerCase();
+      // مطابقة كاملة أولاً
+      final exact = printers.where(
+        (p) => (p.name).trim().toLowerCase() == lower,
+      );
+      if (exact.isNotEmpty) return exact.first;
+      // ثم مطابقة جزئية احتياطية
+      for (final p in printers) {
+        final n = (p.name).toLowerCase();
+        if (n.contains(lower)) return p;
+      }
+      return null;
+    } catch (e) {
+      debugPrint('❌ خطأ في البحث عن الطابعة بالاسم "$name": $e');
+      return null;
+    }
+  }
+
+  /// البحث عن طابعات تطابق الاسم بالكامل أو جزئياً (غير حساس لحالة الأحرف)
+  Future<List<Printer>> findPrintersByName(String name) async {
+    try {
+      final printers = await getAvailablePrinters();
+      if (printers.isEmpty) return [];
+      final lower = name.trim().toLowerCase();
+
+      final exact = printers
+          .where((p) => (p.name).trim().toLowerCase() == lower)
+          .toList();
+      if (exact.isNotEmpty) return exact;
+
+      final partial = printers
+          .where((p) => (p.name).toLowerCase().contains(lower))
+          .toList();
+      return partial;
+    } catch (e) {
+      debugPrint('❌ خطأ في البحث عن الطابعات بالاسم "$name": $e');
+      return [];
+    }
+  }
+
   /// توليد صفحة اختبار
   Future<pw.Font> _loadArabicFont() async {
     try {
@@ -332,13 +376,12 @@ class RealPrinterService {
   Future<Uint8List> _generateTestPage() async {
     final pdf = pw.Document();
     final arabicFont = await _loadArabicFont();
+    final logo = await _tryLoadLogo(monochrome: true);
 
     pdf.addPage(
       pw.Page(
-        pageFormat: PdfPageFormat(
-          (80 / 25.4) * PdfPageFormat.inch,
-          (210 / 25.4) * PdfPageFormat.inch,
-        ),
+        // استخدام لفة ورق 80mm حرارية (ارتفاع ديناميكي حسب المحتوى)
+        pageFormat: PdfPageFormat.roll80,
         margin: pw.EdgeInsets.zero,
         build: (pw.Context context) {
           // استخدام هوامش داخلية أصغر (حواف شبه صفر) لزيادة المساحة الفعلية للطباعة
@@ -347,6 +390,23 @@ class RealPrinterService {
             child: pw.Column(
               mainAxisAlignment: pw.MainAxisAlignment.center,
               children: [
+                if (logo != null) ...[
+                  pw.Container(
+                    height: 60,
+                    width: 60,
+                    decoration: pw.BoxDecoration(
+                      border: pw.Border.all(width: 1, color: PdfColors.grey300),
+                      shape: pw.BoxShape.circle,
+                    ),
+                    child: pw.Center(
+                      child: pw.Image(
+                        pw.MemoryImage(logo),
+                        fit: pw.BoxFit.contain,
+                      ),
+                    ),
+                  ),
+                  pw.SizedBox(height: 12),
+                ],
                 pw.Text(
                   'صفحة اختبار الطباعة',
                   style: pw.TextStyle(
@@ -397,19 +457,36 @@ class RealPrinterService {
     return pdf.save();
   }
 
+  /// Attempts to load a logo from assets (prefers square / monochrome for thermal speed).
+  Future<Uint8List?> _tryLoadLogo({bool monochrome = false}) async {
+    const bw = 'assets/images/logo_bw.png';
+    const square = 'assets/images/logo_square.png';
+    const original =
+        'assets/images/475686060_122111624468716899_7070205537672805384_n.jpg';
+    final candidates = <String>[if (monochrome) bw, square, original];
+    for (final path in candidates) {
+      try {
+        final data = await rootBundle.load(path);
+        return data.buffer.asUint8List();
+      } catch (_) {
+        continue;
+      }
+    }
+    return null;
+  }
+
   /// توليد PDF للفاتورة
   Future<Uint8List> _generateInvoicePdf(
-    Map<String, dynamic> invoiceData,
+    InvoiceRenderData invoiceRenderData,
   ) async {
     final pdf = pw.Document();
     final arabicFont = await _loadArabicFont();
+    final logo = await _tryLoadLogo(monochrome: true);
 
     pdf.addPage(
       pw.Page(
-        pageFormat: PdfPageFormat(
-          (80 / 25.4) * PdfPageFormat.inch,
-          (210 / 25.4) * PdfPageFormat.inch,
-        ),
+        // طباعة فاتورة حرارية بعرض 80mm (ورق متصل)
+        pageFormat: PdfPageFormat.roll80,
         margin: pw.EdgeInsets.zero,
         build: (pw.Context context) {
           // تصغير الحواف الداخلية لزيادة كثافة الطباعة على الورق بعرض 80mm
@@ -422,8 +499,28 @@ class RealPrinterService {
                 pw.Center(
                   child: pw.Column(
                     children: [
+                      if (logo != null) ...[
+                        pw.Container(
+                          height: 60,
+                          width: 60,
+                          decoration: pw.BoxDecoration(
+                            border: pw.Border.all(
+                              width: 1,
+                              color: PdfColors.grey300,
+                            ),
+                            shape: pw.BoxShape.circle,
+                          ),
+                          child: pw.Center(
+                            child: pw.Image(
+                              pw.MemoryImage(logo),
+                              fit: pw.BoxFit.contain,
+                            ),
+                          ),
+                        ),
+                        pw.SizedBox(height: 8),
+                      ],
                       pw.Text(
-                        invoiceData['storeName'] ?? 'متجر الجوهر',
+                        invoiceRenderData.storeName,
                         style: pw.TextStyle(
                           font: arabicFont,
                           fontSize: 20,
@@ -431,11 +528,11 @@ class RealPrinterService {
                         ),
                       ),
                       pw.Text(
-                        invoiceData['storeAddress'] ?? 'العنوان',
+                        invoiceRenderData.storeAddress ?? 'العنوان',
                         style: pw.TextStyle(font: arabicFont),
                       ),
                       pw.Text(
-                        invoiceData['storePhone'] ?? 'الهاتف',
+                        invoiceRenderData.storePhone ?? 'الهاتف',
                         style: pw.TextStyle(font: arabicFont),
                       ),
                     ],
@@ -445,11 +542,11 @@ class RealPrinterService {
 
                 // Invoice info
                 pw.Text(
-                  'رقم الفاتورة: ${invoiceData['invoiceNumber'] ?? '#001'}',
+                  'رقم الفاتورة: ${invoiceRenderData.invoiceNumber}',
                   style: pw.TextStyle(font: arabicFont),
                 ),
                 pw.Text(
-                  'التاريخ: ${DateTime.now().toString().split(' ')[0]}',
+                  'التاريخ: ${invoiceRenderData.date.toString().split(' ')[0]}',
                   style: pw.TextStyle(font: arabicFont),
                 ),
                 pw.SizedBox(height: 20),
@@ -505,7 +602,7 @@ class RealPrinterService {
                         ),
                       ],
                     ),
-                    ..._generateItemRowsPdf(invoiceData['items'] ?? []),
+                    ..._generateItemRowsPdf(invoiceRenderData.items),
                   ],
                 ),
                 pw.SizedBox(height: 20),
@@ -517,15 +614,15 @@ class RealPrinterService {
                     crossAxisAlignment: pw.CrossAxisAlignment.end,
                     children: [
                       pw.Text(
-                        'المجموع الفرعي: ${invoiceData['subtotal'] ?? '0.00'} د.ل',
+                        'المجموع الفرعي: ${invoiceRenderData.subtotal.toStringAsFixed(2)} د.ل',
                         style: pw.TextStyle(font: arabicFont),
                       ),
                       pw.Text(
-                        'الضريبة: ${invoiceData['tax'] ?? '0.00'} د.ل',
+                        'الضريبة: ${invoiceRenderData.tax.toStringAsFixed(2)} د.ل',
                         style: pw.TextStyle(font: arabicFont),
                       ),
                       pw.Text(
-                        'الإجمالي: ${invoiceData['total'] ?? '0.00'} د.ل',
+                        'الإجمالي: ${invoiceRenderData.total.toStringAsFixed(2)} د.ل',
                         style: pw.TextStyle(
                           font: arabicFont,
                           fontSize: 18,
@@ -540,7 +637,7 @@ class RealPrinterService {
                 // Footer
                 pw.Center(
                   child: pw.Text(
-                    invoiceData['footerText'] ?? 'شكراً لزيارتكم',
+                    invoiceRenderData.footerText ?? 'شكراً لزيارتكم',
                     style: pw.TextStyle(font: arabicFont),
                   ),
                 ),
@@ -554,7 +651,7 @@ class RealPrinterService {
     return pdf.save();
   }
 
-  List<pw.TableRow> _generateItemRowsPdf(List<dynamic> items) {
+  List<pw.TableRow> _generateItemRowsPdf(List<CartItem> items) {
     if (items.isEmpty) {
       return [
         pw.TableRow(
@@ -577,19 +674,19 @@ class RealPrinterService {
             children: [
               pw.Padding(
                 padding: const pw.EdgeInsets.all(8),
-                child: pw.Text(item['name'] ?? ''),
+                child: pw.Text(item.item.sku),
               ),
               pw.Padding(
                 padding: const pw.EdgeInsets.all(8),
-                child: pw.Text(item['quantity']?.toString() ?? '1'),
+                child: pw.Text(item.quantity.toString()),
               ),
               pw.Padding(
                 padding: const pw.EdgeInsets.all(8),
-                child: pw.Text('${item['price'] ?? '0.00'} د.ل'),
+                child: pw.Text('${item.unitPrice.toStringAsFixed(2)} د.ل'),
               ),
               pw.Padding(
                 padding: const pw.EdgeInsets.all(8),
-                child: pw.Text('${item['total'] ?? '0.00'} د.ل'),
+                child: pw.Text('${item.totalPrice.toStringAsFixed(2)} د.ل'),
               ),
             ],
           ),

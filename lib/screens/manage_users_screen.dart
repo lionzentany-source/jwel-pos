@@ -4,6 +4,8 @@ import '../providers/user_provider.dart';
 import '../models/user.dart';
 import '../utils/user_avatar_helper.dart';
 import '../services/user_service.dart';
+import 'package:fluent_ui/fluent_ui.dart';
+import '../widgets/adaptive_scaffold.dart';
 
 class ManageUsersScreen extends ConsumerWidget {
   const ManageUsersScreen({super.key});
@@ -13,47 +15,52 @@ class ManageUsersScreen extends ConsumerWidget {
     final usersAsync = ref.watch(allUsersProvider);
     final currentUser = ref.watch(userNotifierProvider).value;
 
-    // التحقق من صلاحيات المدير
     if (currentUser?.role != UserRole.admin) {
-      return CupertinoPageScaffold(
-        navigationBar: const CupertinoNavigationBar(
-          middle: Text('إدارة المستخدمين'),
-        ),
-        child: const Center(
+      return AdaptiveScaffold(
+        title: 'إدارة المستخدمين',
+        body: Center(
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              Icon(CupertinoIcons.lock_shield, size: 80, color: CupertinoColors.systemRed),
-              SizedBox(height: 16),
-              Text('ليس لديك صلاحية للوصول لهذه الصفحة',
-                style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600)),
-              SizedBox(height: 8),
-              Text('هذه الصفحة مخصصة للمدير فقط',
-                style: TextStyle(color: CupertinoColors.systemGrey)),
+              Icon(FluentIcons.lock, size: 80, color: Color(0xFF0078D4)),
+              const SizedBox(height: 16),
+              Text(
+                'ليس لديك صلاحية للوصول لهذه الصفحة',
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'هذه الصفحة مخصصة للمدير فقط',
+                style: TextStyle(color: Color(0xFF106EBE)),
+              ),
             ],
           ),
         ),
+        backgroundColor: const Color(0xfff6f8fa),
       );
     }
 
-    return CupertinoPageScaffold(
-      navigationBar: CupertinoNavigationBar(
-        middle: const Text('إدارة المستخدمين'),
-        trailing: CupertinoButton(
-          padding: EdgeInsets.zero,
-          child: const Icon(CupertinoIcons.add),
+    return AdaptiveScaffold(
+      title: 'إدارة المستخدمين',
+      commandBarItems: [
+        CommandBarButton(
+          icon: const Icon(FluentIcons.add, size: 20),
+          label: const Text(
+            'إضافة',
+            style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+          ),
           onPressed: () => _showAddUserDialog(context, ref),
         ),
-      ),
-      child: usersAsync.when(
+      ],
+      backgroundColor: const Color(0xfff6f8fa),
+      body: usersAsync.when(
         data: (users) => _buildUsersList(context, ref, users),
-        loading: () => const Center(child: CupertinoActivityIndicator()),
+        loading: () => const Center(child: ProgressRing()),
         error: (error, stackTrace) => Center(
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              const Icon(CupertinoIcons.exclamationmark_triangle,
-                size: 50, color: CupertinoColors.systemRed),
+              Icon(FluentIcons.error, size: 50, color: Colors.red),
               const SizedBox(height: 16),
               Text('خطأ في تحميل المستخدمين: $error'),
             ],
@@ -63,15 +70,26 @@ class ManageUsersScreen extends ConsumerWidget {
     );
   }
 
-  Widget _buildUsersList(BuildContext context, WidgetRef ref, List<User> users) {
+  Widget _buildUsersList(
+    BuildContext context,
+    WidgetRef ref,
+    List<User> users,
+  ) {
     if (users.isEmpty) {
-      return const Center(
+      return Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(CupertinoIcons.person_3, size: 80, color: CupertinoColors.systemGrey),
-            SizedBox(height: 16),
-            Text('لا يوجد مستخدمين', style: TextStyle(fontSize: 18)),
+            Icon(
+              FluentIcons.people,
+              size: 80,
+              color: FluentTheme.of(context).inactiveColor,
+            ),
+            const SizedBox(height: 16),
+            Text(
+              'لا يوجد مستخدمين',
+              style: FluentTheme.of(context).typography.subtitle,
+            ),
           ],
         ),
       );
@@ -82,81 +100,89 @@ class ManageUsersScreen extends ConsumerWidget {
       itemCount: users.length,
       itemBuilder: (context, index) {
         final user = users[index];
-        return Container(
-          margin: const EdgeInsets.only(bottom: 12),
-          decoration: BoxDecoration(
-            color: CupertinoColors.white,
-            borderRadius: BorderRadius.circular(12),
-            boxShadow: [
-              BoxShadow(
-                color: CupertinoColors.systemGrey.withValues(alpha: 0.1),
-                blurRadius: 4,
-                offset: const Offset(0, 2),
+        return AdaptiveCard(
+          padding: const EdgeInsets.all(16),
+          backgroundColor: Color(0xffffffff),
+          child: Row(
+            children: [
+              Container(
+                width: 50,
+                height: 50,
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    colors: [
+                      UserAvatarHelper.getUserColor(user),
+                      UserAvatarHelper.getUserColor(user).withAlpha(179),
+                    ],
+                  ),
+                  shape: BoxShape.circle,
+                ),
+                child: Icon(
+                  UserAvatarHelper.getUserIcon(user),
+                  color: Color(0xFFFFFFFF),
+                  size: 24,
+                ),
               ),
-            ],
-          ),
-          child: CupertinoListTile(
-            leading: Container(
-              width: 50,
-              height: 50,
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  colors: [
-                    UserAvatarHelper.getUserColor(user),
-                    UserAvatarHelper.getUserColor(user).withValues(alpha: 0.7),
+              const SizedBox(width: 16),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      user.fullName,
+                      style: const TextStyle(fontWeight: FontWeight.w600),
+                    ),
+                    Text(
+                      '@${user.username}',
+                      style: TextStyle(color: Color(0xFF106EBE)),
+                    ),
+                    const SizedBox(height: 4),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 2,
+                      ),
+                      decoration: BoxDecoration(
+                        color: UserAvatarHelper.getUserColor(
+                          user,
+                        ).withAlpha(26),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Text(
+                        user.role.displayName,
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: UserAvatarHelper.getUserColor(user),
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ),
                   ],
                 ),
-                shape: BoxShape.circle,
               ),
-              child: Icon(
-                UserAvatarHelper.getUserIcon(user),
-                color: CupertinoColors.white,
-                size: 24,
-              ),
-            ),
-            title: Text(user.fullName,
-              style: const TextStyle(fontWeight: FontWeight.w600)),
-            subtitle: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text('@${user.username}',
-                  style: const TextStyle(color: CupertinoColors.systemGrey)),
-                const SizedBox(height: 4),
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                  decoration: BoxDecoration(
-                    color: UserAvatarHelper.getUserColor(user).withValues(alpha: 0.1),
-                    borderRadius: BorderRadius.circular(8),
+              Column(
+                children: [
+                  Icon(
+                    user.isActive ? FluentIcons.check_mark : FluentIcons.cancel,
+                    color: user.isActive ? Color(0xFF22C55E) : Colors.red,
+                    size: 20,
                   ),
-                  child: Text(
-                    user.role.displayName,
+                  const SizedBox(height: 4),
+                  Text(
+                    user.isActive ? 'نشط' : 'معطل',
                     style: TextStyle(
-                      fontSize: 12,
-                      color: UserAvatarHelper.getUserColor(user),
-                      fontWeight: FontWeight.w500,
+                      fontSize: 10,
+                      color: user.isActive ? Color(0xFF22C55E) : Colors.red,
                     ),
                   ),
-                ),
-              ],
-            ),
-            trailing: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                // أيقونة الحالة
-                Icon(
-                  user.isActive ? CupertinoIcons.check_mark_circled_solid : CupertinoIcons.xmark_circle_fill,
-                  color: user.isActive ? CupertinoColors.systemGreen : CupertinoColors.systemRed,
-                  size: 20,
-                ),
-                const SizedBox(width: 8),
-                // زر الخيارات
-                CupertinoButton(
-                  padding: EdgeInsets.zero,
-                  child: const Icon(CupertinoIcons.ellipsis_vertical),
-                  onPressed: () => _showUserOptions(context, ref, user),
-                ),
-              ],
-            ),
+                ],
+              ),
+              const SizedBox(width: 8),
+              Button(
+                onPressed: () => _showUserOptions(context, ref, user),
+                child: const Icon(FluentIcons.more),
+              ),
+            ],
           ),
         );
       },
@@ -383,7 +409,11 @@ class ManageUsersScreen extends ConsumerWidget {
     );
   }
 
-  void _showChangePasswordDialog(BuildContext context, WidgetRef ref, User user) {
+  void _showChangePasswordDialog(
+    BuildContext context,
+    WidgetRef ref,
+    User user,
+  ) {
     final passwordController = TextEditingController();
 
     showCupertinoDialog(
@@ -411,7 +441,10 @@ class ManageUsersScreen extends ConsumerWidget {
             child: const Text('تغيير'),
             onPressed: () async {
               try {
-                await UserService().changePassword(user.id!, passwordController.text);
+                await UserService().changePassword(
+                  user.id!,
+                  passwordController.text,
+                );
                 if (context.mounted) {
                   Navigator.pop(context);
                   _showSuccessMessage(context, 'تم تغيير كلمة المرور بنجاح');
@@ -436,8 +469,10 @@ class ManageUsersScreen extends ConsumerWidget {
       );
       ref.invalidate(allUsersProvider);
       if (context.mounted) {
-        _showSuccessMessage(context, 
-          user.isActive ? 'تم إلغاء تفعيل المستخدم' : 'تم تفعيل المستخدم');
+        _showSuccessMessage(
+          context,
+          user.isActive ? 'تم إلغاء تفعيل المستخدم' : 'تم تفعيل المستخدم',
+        );
       }
     } catch (e) {
       if (context.mounted) {
@@ -451,7 +486,9 @@ class ManageUsersScreen extends ConsumerWidget {
       context: context,
       builder: (context) => CupertinoAlertDialog(
         title: const Text('تأكيد الحذف'),
-        content: Text('هل أنت متأكد من حذف المستخدم "${user.fullName}"؟\nهذا الإجراء لا يمكن التراجع عنه.'),
+        content: Text(
+          'هل أنت متأكد من حذف المستخدم "${user.fullName}"?\nهذا الإجراء لا يمكن التراجع عنه.',
+        ),
         actions: [
           CupertinoDialogAction(
             child: const Text('إلغاء'),
@@ -486,7 +523,10 @@ class ManageUsersScreen extends ConsumerWidget {
       builder: (context) => CupertinoAlertDialog(
         title: const Row(
           children: [
-            Icon(CupertinoIcons.check_mark_circled, color: CupertinoColors.systemGreen),
+            Icon(
+              CupertinoIcons.check_mark_circled,
+              color: CupertinoColors.systemGreen,
+            ),
             SizedBox(width: 8),
             Text('نجح'),
           ],
@@ -508,7 +548,10 @@ class ManageUsersScreen extends ConsumerWidget {
       builder: (context) => CupertinoAlertDialog(
         title: const Row(
           children: [
-            Icon(CupertinoIcons.exclamationmark_triangle, color: CupertinoColors.systemRed),
+            Icon(
+              CupertinoIcons.exclamationmark_triangle,
+              color: CupertinoColors.systemRed,
+            ),
             SizedBox(width: 8),
             Text('خطأ'),
           ],

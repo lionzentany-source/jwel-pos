@@ -1,16 +1,24 @@
 import 'package:flutter/cupertino.dart';
+import 'package:fluent_ui/fluent_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:fl_chart/fl_chart.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../widgets/adaptive_scaffold.dart';
+import '../widgets/app_button.dart';
 import '../providers/invoice_provider.dart';
+import '../providers/item_provider.dart';
 import '../providers/settings_provider.dart';
-import 'package:path_provider/path_provider.dart';
-import 'dart:io';
-import 'package:url_launcher/url_launcher.dart';
+import '../models/item.dart';
 import '../models/advanced_report.dart';
 import '../services/advanced_report_service.dart';
+import '../services/report_service.dart';
+import '../widgets/side_sheet.dart';
+import '../services/report_filters_storage.dart';
+import '../providers/category_provider.dart';
+import '../models/invoice.dart';
 
-enum _ReportsMode { basic, advanced }
+// Consolidated single-page reports (basic + advanced)
 
 class ReportsScreen extends ConsumerStatefulWidget {
   const ReportsScreen({super.key});
@@ -25,7 +33,13 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
   Map<String, dynamic>? _salesStats;
   List<Map<String, dynamic>>? _topSellingItems;
   bool _isLoading = false;
-  _ReportsMode _mode = _ReportsMode.basic;
+  ItemLocation? _inventoryLocationFilter;
+  bool _groupInventoryByLocation = false;
+  int? _categoryId;
+  PaymentMethod? _paymentMethod;
+  // Lightweight data for charts
+  Map<String, double>? _paymentDistribution;
+  TrendData? _trendData;
 
   // Advanced report service
   final AdvancedReportService _advancedService = AdvancedReportService();
@@ -33,7 +47,22 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
   @override
   void initState() {
     super.initState();
-    _loadReports();
+    _restoreFiltersAndLoad();
+  }
+
+  Future<void> _restoreFiltersAndLoad() async {
+    try {
+      final saved = await ReportFiltersStorage.load();
+      setState(() {
+        _startDate = saved.startDate ?? _startDate;
+        _endDate = saved.endDate ?? _endDate;
+        _inventoryLocationFilter = saved.inventoryLocation;
+        _groupInventoryByLocation = saved.groupByLocation;
+        _categoryId = saved.categoryId;
+        _paymentMethod = saved.paymentMethod;
+      });
+    } catch (_) {}
+    await _loadReports();
   }
 
   Future<void> _loadReports() async {
@@ -46,17 +75,51 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
       final salesStats = await invoiceRepository.getSalesStats(
         startDate: _startDate,
         endDate: _endDate,
+        categoryId: _categoryId,
+        paymentMethod: _paymentMethod,
+        itemLocation: _inventoryLocationFilter,
       );
       final topSellingItems = await invoiceRepository.getTopSellingItems(
         startDate: _startDate,
         endDate: _endDate,
+        categoryId: _categoryId,
+        paymentMethod: _paymentMethod,
+        itemLocation: _inventoryLocationFilter,
+      );
+      // Charts data
+      final payments = await _advancedService.generatePaymentMethodsAnalysis(
+        startDate: _startDate,
+        endDate: _endDate,
+        categoryId: _categoryId,
+        paymentMethod: _paymentMethod,
+        itemLocation: _inventoryLocationFilter,
+      );
+      final trend = await _advancedService.generateTrendAnalysis(
+        startDate: _startDate,
+        endDate: _endDate,
+        categoryId: _categoryId,
+        paymentMethod: _paymentMethod,
+        itemLocation: _inventoryLocationFilter,
       );
 
       setState(() {
         _salesStats = salesStats.isNotEmpty ? salesStats.first : null;
         _topSellingItems = topSellingItems;
+        _paymentDistribution = (payments['amounts'] as Map<String, double>);
+        _trendData = trend;
         _isLoading = false;
       });
+      // Persist current filters
+      await ReportFiltersStorage.save(
+        ReportFilters(
+          startDate: _startDate,
+          endDate: _endDate,
+          inventoryLocation: _inventoryLocationFilter,
+          groupByLocation: _groupInventoryByLocation,
+          categoryId: _categoryId,
+          paymentMethod: _paymentMethod,
+        ),
+      );
     } catch (error) {
       setState(() {
         _isLoading = false;
@@ -69,67 +132,535 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
   Widget build(BuildContext context) {
     final currency = ref.watch(currencyProvider);
 
-    return AdaptiveScaffold(
-      title: 'التقارير',
-      actions: [
-        CupertinoButton(
-          padding: EdgeInsets.zero,
-          onPressed: _showDateRangePicker,
-          child: const Icon(CupertinoIcons.calendar),
-        ),
-      ],
-      body: Column(
-        children: [
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-            child: CupertinoSegmentedControl<_ReportsMode>(
-              groupValue: _mode,
-              onValueChanged: (m) => setState(() => _mode = m),
-              children: const {
-                _ReportsMode.basic: Padding(
-                  padding: EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                  child: Text('أساسية'),
-                ),
-                _ReportsMode.advanced: Padding(
-                  padding: EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                  child: Text('متقدمة'),
-                ),
-              },
+    return Container(
+      color: Color(0xfff6f8fa), // خلفية موحدة
+      child: AdaptiveScaffold(
+        title: 'التقارير',
+        commandBarItems: [
+          CommandBarButton(
+            icon: const Icon(FluentIcons.calendar, size: 20),
+            label: const Text(
+              'اليوم',
+              style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
             ),
+            onPressed: () async {
+              final now = DateTime.now();
+              setState(() {
+                _startDate = DateTime(now.year, now.month, now.day);
+                _endDate = now;
+              });
+              await _loadReports();
+            },
           ),
-          Expanded(
-            child: _isLoading
-                ? const Center(child: CupertinoActivityIndicator())
-                : SingleChildScrollView(
-                    child: Padding(
-                      padding: const EdgeInsets.only(bottom: 24),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        children: [
-                          _buildDateRangeCard(),
-                          const SizedBox(height: 16),
-                          if (_mode == _ReportsMode.basic) ...[
-                            _buildQuickReportsCard(),
-                            const SizedBox(height: 16),
-                            _buildSalesStatsCard(currency),
+          CommandBarButton(
+            icon: const Icon(FluentIcons.calendar, size: 20),
+            label: const Text(
+              'هذا الأسبوع',
+              style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+            ),
+            onPressed: () async {
+              final now = DateTime.now();
+              final start = now.subtract(Duration(days: now.weekday - 1));
+              final end = start.add(const Duration(days: 6));
+              setState(() {
+                _startDate = DateTime(start.year, start.month, start.day);
+                _endDate = DateTime(end.year, end.month, end.day, 23, 59, 59);
+              });
+              await _loadReports();
+            },
+          ),
+          CommandBarButton(
+            icon: const Icon(FluentIcons.calendar, size: 20),
+            label: const Text(
+              'هذا الشهر',
+              style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+            ),
+            onPressed: () async {
+              final now = DateTime.now();
+              final start = DateTime(now.year, now.month, 1);
+              final end = DateTime(now.year, now.month + 1, 0);
+              setState(() {
+                _startDate = start;
+                _endDate = DateTime(end.year, end.month, end.day, 23, 59, 59);
+              });
+              await _loadReports();
+            },
+          ),
+          const CommandBarSeparator(),
+          CommandBarButton(
+            icon: const Icon(FluentIcons.filter_settings, size: 20),
+            label: const Text(
+              'الفلاتر',
+              style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+            ),
+            onPressed: _openFilters,
+          ),
+          CommandBarButton(
+            icon: const Icon(FluentIcons.calendar, size: 20),
+            label: const Text(
+              'تحديد الفترة',
+              style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+            ),
+            onPressed: _showDateRangePicker,
+          ),
+        ],
+        body: Column(
+          children: [
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              child: _buildDateRangeCard(),
+            ),
+            Expanded(
+              child: _isLoading
+                  ? const Center(child: ProgressRing())
+                  : SingleChildScrollView(
+                      child: Padding(
+                        padding: const EdgeInsets.only(bottom: 24),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            _buildOverviewSection(currency),
                             const SizedBox(height: 16),
                             _buildTopSellingItemsCard(currency),
                             const SizedBox(height: 16),
+                            _buildInventoryExportCard(),
+                            const SizedBox(height: 16),
+                            Expander(
+                              header: const Text('تقارير متقدمة'),
+                              content: Padding(
+                                padding: const EdgeInsets.only(top: 8.0),
+                                child: _buildAdvancedReportsGrid(),
+                              ),
+                              initiallyExpanded: false,
+                            ),
+                            const SizedBox(height: 16),
                             _buildActionButtons(),
-                          ] else ...[
-                            _buildAdvancedReportsGrid(),
                           ],
-                        ],
+                        ),
                       ),
                     ),
-                  ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // Overview section with KPIs and lightweight charts
+  Widget _buildOverviewSection(AsyncValue<String> currency) {
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 16),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: CupertinoColors.systemBackground,
+        borderRadius: BorderRadius.circular(12),
+        boxShadow: [
+          BoxShadow(
+            color: CupertinoColors.systemGrey.withValues(alpha: 0.1),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'نظرة عامة',
+            style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
+          ),
+          const SizedBox(height: 12),
+          _buildSalesStatsCard(currency),
+          const SizedBox(height: 16),
+          Wrap(
+            spacing: 12,
+            runSpacing: 12,
+            children: [_buildPaymentDistributionPie(), _buildTrendLineChart()],
           ),
         ],
       ),
     );
   }
 
-  Widget _buildDateRangeCard() {
+  Widget _buildPaymentDistributionPie() {
+    final data = _paymentDistribution;
+    if (data == null || data.isEmpty) return const SizedBox.shrink();
+    final total = data.values.fold<double>(0.0, (p, c) => p + c);
+    final sections = <PieChartSectionData>[];
+    final colors = [
+      CupertinoColors.activeBlue,
+      CupertinoColors.activeGreen,
+      CupertinoColors.systemOrange,
+      CupertinoColors.systemPurple,
+      CupertinoColors.systemRed,
+      CupertinoColors.systemTeal,
+    ];
+    int i = 0;
+    data.forEach((label, value) {
+      final color = colors[i % colors.length];
+      sections.add(
+        PieChartSectionData(
+          value: value,
+          color: color,
+          title: total > 0
+              ? '${((value / total) * 100).toStringAsFixed(0)}%'
+              : '0%',
+        ),
+      );
+      i++;
+    });
+    return SizedBox(
+      width: 380,
+      height: 220,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'توزيع طرق الدفع',
+            style: TextStyle(fontWeight: FontWeight.w600),
+          ),
+          const SizedBox(height: 8),
+          Expanded(
+            child: Row(
+              children: [
+                Expanded(
+                  child: PieChart(
+                    PieChartData(
+                      sections: sections,
+                      sectionsSpace: 2,
+                      centerSpaceRadius: 40,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: data.entries.map((e) {
+                    final idx = data.keys.toList().indexOf(e.key);
+                    return Padding(
+                      padding: const EdgeInsets.only(bottom: 6),
+                      child: Row(
+                        children: [
+                          Container(
+                            width: 10,
+                            height: 10,
+                            color: colors[idx % colors.length],
+                          ),
+                          const SizedBox(width: 6),
+                          Text('${e.key}: ${e.value.toStringAsFixed(2)}'),
+                        ],
+                      ),
+                    );
+                  }).toList(),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildTrendLineChart() {
+    final t = _trendData;
+    if (t == null || t.monthlySales.isEmpty) return const SizedBox.shrink();
+    final spots = <FlSpot>[];
+    for (var i = 0; i < t.monthlySales.length; i++) {
+      spots.add(FlSpot(i.toDouble(), t.monthlySales[i].sales));
+    }
+    return SizedBox(
+      width: 380,
+      height: 220,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'اتجاه المبيعات',
+            style: TextStyle(fontWeight: FontWeight.w600),
+          ),
+          const SizedBox(height: 8),
+          Expanded(
+            child: LineChart(
+              LineChartData(
+                gridData: const FlGridData(show: true),
+                titlesData: FlTitlesData(
+                  leftTitles: const AxisTitles(
+                    sideTitles: SideTitles(showTitles: true, reservedSize: 36),
+                  ),
+                  rightTitles: const AxisTitles(
+                    sideTitles: SideTitles(showTitles: false),
+                  ),
+                  topTitles: const AxisTitles(
+                    sideTitles: SideTitles(showTitles: false),
+                  ),
+                  bottomTitles: AxisTitles(
+                    sideTitles: SideTitles(
+                      showTitles: true,
+                      interval: 1,
+                      getTitlesWidget: (value, meta) {
+                        final idx = value.toInt();
+                        if (idx < 0 || idx >= t.monthlySales.length) {
+                          return const SizedBox.shrink();
+                        }
+                        final m = t.monthlySales[idx];
+                        return SideTitleWidget(
+                          axisSide: meta.axisSide,
+                          child: Text(
+                            '${m.month}/${m.year % 100}',
+                            style: const TextStyle(fontSize: 10),
+                          ),
+                        );
+                      },
+                    ),
+                  ),
+                ),
+                borderData: FlBorderData(show: true),
+                lineBarsData: [
+                  LineChartBarData(
+                    isCurved: true,
+                    barWidth: 3,
+                    color: CupertinoColors.activeGreen,
+                    spots: spots,
+                    dotData: const FlDotData(show: false),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _openFilters() {
+    showSideSheet(
+      context,
+      title: 'الفلاتر',
+      width: 420,
+      child: Consumer(
+        builder: (context, ref, _) {
+          final categories = ref.watch(categoriesProvider);
+          return Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'الفترة',
+                  style: TextStyle(fontWeight: FontWeight.w600),
+                ),
+                const SizedBox(height: 8),
+                Row(
+                  children: [
+                    Expanded(
+                      child: FilledButton(
+                        onPressed: () async {
+                          await _pickDate(true);
+                        },
+                        child: Text(
+                          'من: ${_formatDate(_startDate)}',
+                          style: const TextStyle(color: Colors.white),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: FilledButton(
+                        onPressed: () async {
+                          await _pickDate(false);
+                        },
+                        child: Text(
+                          'إلى: ${_formatDate(_endDate)}',
+                          style: const TextStyle(color: Colors.white),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 16),
+                const Text(
+                  'مكان التقرير',
+                  style: TextStyle(fontWeight: FontWeight.w600),
+                ),
+                const SizedBox(height: 8),
+                ComboBox<ItemLocation?>(
+                  isExpanded: true,
+                  value: _inventoryLocationFilter,
+                  items: [
+                    const ComboBoxItem<ItemLocation?>(
+                      value: null,
+                      child: Text('كل الأماكن'),
+                    ),
+                    ...ItemLocation.values.map(
+                      (loc) => ComboBoxItem<ItemLocation?>(
+                        value: loc,
+                        child: Text(loc.displayName),
+                      ),
+                    ),
+                  ],
+                  onChanged: (v) =>
+                      setState(() => _inventoryLocationFilter = v),
+                ),
+                const SizedBox(height: 8),
+                ToggleSwitch(
+                  checked: _groupInventoryByLocation,
+                  onChanged: (v) =>
+                      setState(() => _groupInventoryByLocation = v),
+                  content: const Text('تجميع حسب المكان'),
+                ),
+                const SizedBox(height: 16),
+                const Text(
+                  'الفئة',
+                  style: TextStyle(fontWeight: FontWeight.w600),
+                ),
+                const SizedBox(height: 8),
+                categories.when(
+                  data: (list) => ComboBox<int?>(
+                    isExpanded: true,
+                    value: _categoryId,
+                    items: [
+                      const ComboBoxItem<int?>(
+                        value: null,
+                        child: Text('كل الفئات'),
+                      ),
+                      ...list.map(
+                        (c) => ComboBoxItem<int?>(
+                          value: c.id,
+                          child: Text(c.nameAr),
+                        ),
+                      ),
+                    ],
+                    onChanged: (v) => setState(() => _categoryId = v),
+                  ),
+                  loading: () => const ProgressBar(),
+                  error: (_, __) => const Text('تعذر تحميل الفئات'),
+                ),
+                const SizedBox(height: 16),
+                const Text(
+                  'طريقة الدفع',
+                  style: TextStyle(fontWeight: FontWeight.w600),
+                ),
+                const SizedBox(height: 8),
+                ComboBox<PaymentMethod?>(
+                  isExpanded: true,
+                  value: _paymentMethod,
+                  items: [
+                    const ComboBoxItem<PaymentMethod?>(
+                      value: null,
+                      child: Text('كل الطرق'),
+                    ),
+                    ...PaymentMethod.values.map(
+                      (m) => ComboBoxItem<PaymentMethod?>(
+                        value: m,
+                        child: Text(m.displayName),
+                      ),
+                    ),
+                  ],
+                  onChanged: (v) => setState(() => _paymentMethod = v),
+                ),
+                const Spacer(),
+                Row(
+                  children: [
+                    Expanded(
+                      child: Button(
+                        onPressed: () => Navigator.of(context).maybePop(),
+                        child: const Text('إغلاق'),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: FilledButton(
+                        onPressed: () async {
+                          Navigator.of(context).maybePop();
+                          await ReportFiltersStorage.save(
+                            ReportFilters(
+                              startDate: _startDate,
+                              endDate: _endDate,
+                              inventoryLocation: _inventoryLocationFilter,
+                              groupByLocation: _groupInventoryByLocation,
+                              categoryId: _categoryId,
+                              paymentMethod: _paymentMethod,
+                            ),
+                          );
+                          await _loadReports();
+                        },
+                        child: const Text('تطبيق'),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  Future<void> _pickDate(bool isStart) async {
+    DateTime temp = isStart ? _startDate : _endDate;
+    await showCupertinoModalPopup(
+      context: context,
+      builder: (context) => Container(
+        height: 300,
+        color: CupertinoColors.systemBackground,
+        child: Column(
+          children: [
+            Container(
+              height: 50,
+              decoration: const BoxDecoration(
+                border: Border(
+                  bottom: BorderSide(color: CupertinoColors.separator),
+                ),
+              ),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  CupertinoButton(
+                    child: const Text('إلغاء'),
+                    onPressed: () => Navigator.pop(context),
+                  ),
+                  const Text(
+                    'اختر التاريخ',
+                    style: TextStyle(fontWeight: FontWeight.w600),
+                  ),
+                  CupertinoButton(
+                    child: const Text('تم'),
+                    onPressed: () {
+                      setState(() {
+                        if (isStart) {
+                          _startDate = temp;
+                        } else {
+                          _endDate = temp;
+                        }
+                      });
+                      Navigator.pop(context);
+                    },
+                  ),
+                ],
+              ),
+            ),
+            Expanded(
+              child: CupertinoDatePicker(
+                mode: CupertinoDatePickerMode.date,
+                initialDateTime: temp,
+                onDateTimeChanged: (d) => temp = d,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildInventoryExportCard() {
+    String locLabel;
+    if (_inventoryLocationFilter == null) {
+      locLabel = 'كل الأماكن';
+    } else {
+      locLabel = _inventoryLocationFilter!.displayName;
+    }
+
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
@@ -143,6 +674,147 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
           ),
         ],
       ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'تقرير المخزون',
+            style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
+          ),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              Expanded(
+                child: CupertinoButton(
+                  padding: const EdgeInsets.symmetric(
+                    vertical: 10,
+                    horizontal: 12,
+                  ),
+                  color: CupertinoColors.systemGrey6,
+                  onPressed: _pickInventoryLocation,
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text('مكان التقرير: $locLabel'),
+                      const Icon(CupertinoIcons.chevron_down),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(width: 12),
+              ToggleSwitch(
+                checked: _groupInventoryByLocation,
+                onChanged: (v) => setState(() => _groupInventoryByLocation = v),
+                content: const Text('تجميع حسب المكان'),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              Expanded(
+                child: AppButton.primary(
+                  text: 'PDF تصدير',
+                  onPressed: _exportInventoryPdf,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: AppButton.secondary(
+                  text: 'Excel تصدير',
+                  onPressed: _exportInventoryExcel,
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _pickInventoryLocation() {
+    showCupertinoModalPopup(
+      context: context,
+      builder: (context) => CupertinoActionSheet(
+        title: const Text('اختر مكان التقرير'),
+        actions: [
+          CupertinoActionSheetAction(
+            child: const Text('كل الأماكن'),
+            onPressed: () {
+              setState(() => _inventoryLocationFilter = null);
+              Navigator.pop(context);
+            },
+          ),
+          ...ItemLocation.values.map(
+            (loc) => CupertinoActionSheetAction(
+              child: Text(loc.displayName),
+              onPressed: () {
+                setState(() => _inventoryLocationFilter = loc);
+                Navigator.pop(context);
+              },
+            ),
+          ),
+        ],
+        cancelButton: CupertinoActionSheetAction(
+          child: const Text('إلغاء'),
+          onPressed: () => Navigator.pop(context),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _exportInventoryPdf() async {
+    try {
+      final repo = ref.read(itemRepositoryProvider);
+      final items = await repo.getAllItems(location: _inventoryLocationFilter);
+      if (items.isEmpty) {
+        _showErrorMessage('لا توجد أصناف للتصدير وفق المكان المختار');
+        return;
+      }
+      final path = await ReportService().exportInventoryReportToPDF(
+        items: items,
+        filterLocation: _inventoryLocationFilter,
+        groupByLocation: _groupInventoryByLocation,
+      );
+      final uri = Uri.file(path);
+      if (await canLaunchUrl(uri)) {
+        await launchUrl(uri);
+        _showSuccessMessage('تم إنشاء التقرير وفتحه');
+      } else {
+        _showSuccessMessage('تم إنشاء التقرير: $path');
+      }
+    } catch (e) {
+      _showErrorMessage('فشل تصدير تقرير المخزون: $e');
+    }
+  }
+
+  Future<void> _exportInventoryExcel() async {
+    try {
+      final repo = ref.read(itemRepositoryProvider);
+      final items = await repo.getAllItems(location: _inventoryLocationFilter);
+      if (items.isEmpty) {
+        _showErrorMessage('لا توجد أصناف للتصدير وفق المكان المختار');
+        return;
+      }
+      final filePath = await ReportService().exportToExcel(
+        reportType: 'Inventory Report',
+        data: items,
+      );
+      final uri = Uri.file(filePath);
+      if (await canLaunchUrl(uri)) {
+        await launchUrl(uri);
+        _showSuccessMessage('تم إنشاء ملف Excel وفتحه');
+      } else {
+        _showSuccessMessage('تم إنشاء ملف Excel: $filePath');
+      }
+    } catch (e) {
+      _showErrorMessage('فشل تصدير Excel للمخزون: $e');
+    }
+  }
+
+  Widget _buildDateRangeCard() {
+    return Card(
+      padding: const EdgeInsets.all(16),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -196,19 +868,8 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
         final type = reportTypes[index];
         return GestureDetector(
           onTap: () => _generateAdvancedReport(type),
-          child: Container(
+          child: Card(
             padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: CupertinoColors.systemBackground,
-              borderRadius: BorderRadius.circular(12),
-              boxShadow: [
-                BoxShadow(
-                  color: CupertinoColors.systemGrey.withValues(alpha: 0.1),
-                  blurRadius: 8,
-                  offset: const Offset(0, 2),
-                ),
-              ],
-            ),
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
@@ -297,6 +958,9 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
     final data = await _advancedService.generateProfitabilityReport(
       startDate: _startDate,
       endDate: _endDate,
+      categoryId: _categoryId,
+      paymentMethod: _paymentMethod,
+      itemLocation: _inventoryLocationFilter,
     );
     if (!mounted) return;
     showCupertinoModalPopup(
@@ -309,6 +973,9 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
     final data = await _advancedService.generateTrendAnalysis(
       startDate: _startDate,
       endDate: _endDate,
+      categoryId: _categoryId,
+      paymentMethod: _paymentMethod,
+      itemLocation: _inventoryLocationFilter,
     );
     if (!mounted) return;
     showCupertinoModalPopup(
@@ -321,6 +988,9 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
     final data = await _advancedService.generateTopCustomersReport(
       startDate: _startDate,
       endDate: _endDate,
+      categoryId: _categoryId,
+      paymentMethod: _paymentMethod,
+      itemLocation: _inventoryLocationFilter,
     );
     if (!mounted) return;
     showCupertinoModalPopup(
@@ -333,6 +1003,9 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
     final data = await _advancedService.generatePaymentMethodsAnalysis(
       startDate: _startDate,
       endDate: _endDate,
+      categoryId: _categoryId,
+      paymentMethod: _paymentMethod,
+      itemLocation: _inventoryLocationFilter,
     );
     if (!mounted) return;
     showCupertinoModalPopup(
@@ -354,6 +1027,9 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
     final data = await _advancedService.generateComparisonReport(
       startDate: _startDate,
       endDate: _endDate,
+      categoryId: _categoryId,
+      paymentMethod: _paymentMethod,
+      itemLocation: _inventoryLocationFilter,
     );
     if (!mounted) return;
     showCupertinoModalPopup(
@@ -366,6 +1042,9 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
     final data = await _advancedService.generateCashFlowReport(
       startDate: _startDate,
       endDate: _endDate,
+      categoryId: _categoryId,
+      paymentMethod: _paymentMethod,
+      itemLocation: _inventoryLocationFilter,
     );
     if (!mounted) return;
     showCupertinoModalPopup(
@@ -640,65 +1319,35 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
     );
   }
 
-  Widget _buildQuickReportsCard() {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: CupertinoColors.systemBackground,
-        borderRadius: BorderRadius.circular(12),
-        boxShadow: [
-          BoxShadow(
-            color: CupertinoColors.systemGrey.withValues(alpha: 0.1),
-            blurRadius: 8,
-            offset: const Offset(0, 2),
-          ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Text(
-            'تقارير سريعة',
-            style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
-          ),
-          const SizedBox(height: 16),
-          Row(
-            children: [
-              Expanded(
-                child: CupertinoButton.filled(
-                  onPressed: _generateWeeklyReport,
-                  child: const Text('تقرير أسبوعي'),
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: CupertinoButton.filled(
-                  onPressed: _generateMonthlyReport,
-                  child: const Text('تقرير شهري'),
-                ),
-              ),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
+  // Removed old quick reports card (replaced by command bar quick filters)
 
   Widget _buildActionButtons() {
     return Row(
       children: [
         Expanded(
-          child: CupertinoButton.filled(
-            onPressed: _exportReport,
-            child: const Text('تصدير التقرير'),
+          child: AppButton.primary(
+            text: 'تصدير PDF',
+            onPressed: _exportSalesPdf,
           ),
         ),
         const SizedBox(width: 16),
         Expanded(
-          child: CupertinoButton(
-            color: CupertinoColors.systemGrey,
-            onPressed: _printReport,
-            child: const Text('طباعة التقرير'),
+          child: Row(
+            children: [
+              Expanded(
+                child: AppButton.secondary(
+                  text: 'Excel',
+                  onPressed: _exportSalesExcel,
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: AppButton.secondary(
+                  text: 'CSV',
+                  onPressed: _exportSalesCsv,
+                ),
+              ),
+            ],
           ),
         ),
       ],
@@ -746,32 +1395,34 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
               ),
             ),
             Expanded(
-              child: Column(
-                children: [
-                  const SizedBox(height: 20),
-                  const Text('من تاريخ:'),
-                  SizedBox(
-                    height: 150,
-                    child: CupertinoDatePicker(
-                      mode: CupertinoDatePickerMode.date,
-                      initialDateTime: _startDate,
-                      onDateTimeChanged: (date) {
-                        _startDate = date;
-                      },
+              child: SingleChildScrollView(
+                child: Column(
+                  children: [
+                    const SizedBox(height: 20),
+                    const Text('من تاريخ:'),
+                    SizedBox(
+                      height: 150,
+                      child: CupertinoDatePicker(
+                        mode: CupertinoDatePickerMode.date,
+                        initialDateTime: _startDate,
+                        onDateTimeChanged: (date) {
+                          _startDate = date;
+                        },
+                      ),
                     ),
-                  ),
-                  const Text('إلى تاريخ:'),
-                  SizedBox(
-                    height: 150,
-                    child: CupertinoDatePicker(
-                      mode: CupertinoDatePickerMode.date,
-                      initialDateTime: _endDate,
-                      onDateTimeChanged: (date) {
-                        _endDate = date;
-                      },
+                    const Text('إلى تاريخ:'),
+                    SizedBox(
+                      height: 150,
+                      child: CupertinoDatePicker(
+                        mode: CupertinoDatePickerMode.date,
+                        initialDateTime: _endDate,
+                        onDateTimeChanged: (date) {
+                          _endDate = date;
+                        },
+                      ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
             ),
           ],
@@ -780,253 +1431,90 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
     );
   }
 
-  Future<void> _exportReport() async {
+  Future<void> _exportSalesPdf() async {
     try {
-      final htmlContent = await _generateReportHTML();
-      final tempDir = await getTemporaryDirectory();
-      final htmlFile = File(
-        '${tempDir.path}/sales_report_${_formatDate(_startDate)}_${_formatDate(_endDate)}.html',
+      final invoiceRepo = ref.read(invoiceRepositoryProvider);
+      final invoices = await invoiceRepo.getInvoicesByDateRange(
+        startDate: _startDate,
+        endDate: _endDate,
+        categoryId: _categoryId,
+        paymentMethod: _paymentMethod,
+        itemLocation: _inventoryLocationFilter,
       );
-      await htmlFile.writeAsString(htmlContent);
-
-      final uri = Uri.file(htmlFile.path);
+      if (invoices.isEmpty) {
+        _showErrorMessage('لا توجد فواتير في الفترة/الفلاتر المحددة');
+        return;
+      }
+      final path = await ReportService().exportSalesReportToPDF(
+        invoices: invoices,
+        startDate: _startDate,
+        endDate: _endDate,
+      );
+      final uri = Uri.file(path);
       if (await canLaunchUrl(uri)) {
         await launchUrl(uri);
-        _showSuccessMessage('تم فتح التقرير في المتصفح');
-      } else {
-        throw Exception('Could not launch browser');
       }
-    } catch (error) {
-      _showErrorMessage('خطأ في تصدير التقرير: $error');
+      _showSuccessMessage('تم إنشاء تقرير PDF');
+    } catch (e) {
+      _showErrorMessage('فشل تصدير PDF: $e');
     }
   }
 
-  Future<void> _printReport() async {
+  Future<void> _exportSalesExcel() async {
     try {
-      final htmlContent = await _generateReportHTML();
-      final tempDir = await getTemporaryDirectory();
-      final htmlFile = File(
-        '${tempDir.path}/sales_report_print_${DateTime.now().millisecondsSinceEpoch}.html',
+      final invoiceRepo = ref.read(invoiceRepositoryProvider);
+      final invoices = await invoiceRepo.getInvoicesByDateRange(
+        startDate: _startDate,
+        endDate: _endDate,
+        categoryId: _categoryId,
+        paymentMethod: _paymentMethod,
+        itemLocation: _inventoryLocationFilter,
       );
-      await htmlFile.writeAsString(htmlContent);
-
-      final uri = Uri.file(htmlFile.path);
+      if (invoices.isEmpty) {
+        _showErrorMessage('لا توجد فواتير في الفترة/الفلاتر المحددة');
+        return;
+      }
+      final filePath = await ReportService().exportToExcel(
+        reportType: 'Sales Report',
+        data: invoices,
+      );
+      final uri = Uri.file(filePath);
       if (await canLaunchUrl(uri)) {
         await launchUrl(uri);
-        _showSuccessMessage('تم فتح التقرير للطباعة');
-      } else {
-        throw Exception('Could not launch browser');
       }
-    } catch (error) {
-      _showErrorMessage('خطأ في طباعة التقرير: $error');
+      _showSuccessMessage('تم إنشاء ملف Excel');
+    } catch (e) {
+      _showErrorMessage('فشل تصدير Excel: $e');
     }
   }
 
-  Future<String> _generateReportHTML() async {
-    final currency = await ref.read(currencyProvider.future);
-    final buffer = StringBuffer();
-
-    buffer.writeln('''
-<!DOCTYPE html>
-<html dir="rtl" lang="ar">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>تقرير المبيعات</title>
-    <style>
-        body {
-            font-family: 'Arial', sans-serif;
-            margin: 0;
-            padding: 20px;
-            background-color: #f5f5f5;
-        }
-        .report-container {
-            max-width: 1000px;
-            margin: 0 auto;
-            background: white;
-            padding: 30px;
-            border-radius: 10px;
-            box-shadow: 0 0 20px rgba(0,0,0,0.1);
-        }
-        .header {
-            text-align: center;
-            border-bottom: 3px solid #2196F3;
-            padding-bottom: 20px;
-            margin-bottom: 30px;
-        }
-        .store-name {
-            font-size: 28px;
-            font-weight: bold;
-            color: #2196F3;
-            margin-bottom: 10px;
-        }
-        .report-title {
-            font-size: 24px;
-            color: #333;
-            margin-bottom: 10px;
-        }
-        .date-range {
-            font-size: 16px;
-            color: #666;
-            margin-bottom: 10px;
-        }
-        .stats-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-            gap: 20px;
-            margin-bottom: 30px;
-        }
-        .stat-card {
-            padding: 20px;
-            border-radius: 8px;
-            text-align: center;
-            border: 2px solid;
-        }
-        .stat-value {
-            font-size: 24px;
-            font-weight: bold;
-            margin-bottom: 5px;
-        }
-        .stat-label {
-            font-size: 14px;
-            color: #666;
-        }
-        .blue { border-color: #2196F3; background-color: rgba(33, 150, 243, 0.1); color: #2196F3; }
-        .green { border-color: #4CAF50; background-color: rgba(76, 175, 80, 0.1); color: #4CAF50; }
-        .orange { border-color: #FF9800; background-color: rgba(255, 152, 0, 0.1); color: #FF9800; }
-        .red { border-color: #F44336; background-color: rgba(244, 67, 54, 0.1); color: #F44336; }
-        .top-items {
-            margin-top: 30px;
-        }
-        .section-title {
-            font-size: 20px;
-            font-weight: bold;
-            margin-bottom: 15px;
-            color: #333;
-        }
-        .items-table {
-            width: 100%;
-            border-collapse: collapse;
-            margin-top: 10px;
-        }
-        .items-table th,
-        .items-table td {
-            padding: 12px;
-            text-align: right;
-            border-bottom: 1px solid #ddd;
-        }
-        .items-table th {
-            background-color: #2196F3;
-            color: white;
-            font-weight: bold;
-        }
-        .items-table tr:nth-child(even) {
-            background-color: #f8f9fa;
-        }
-        .footer {
-            text-align: center;
-            margin-top: 40px;
-            padding-top: 20px;
-            border-top: 1px solid #ddd;
-            color: #666;
-        }
-        @media print {
-            body { background-color: white; }
-            .report-container { box-shadow: none; }
-        }
-    </style>
-</head>
-<body>
-    <div class="report-container">
-        <div class="header">
-            <div class="store-name">مجوهرات جوهر</div>
-            <div class="report-title">تقرير المبيعات</div>
-            <div class="date-range">من ${_formatDate(_startDate)} إلى ${_formatDate(_endDate)}</div>
-            <div style="font-size: 14px; color: #999;">تاريخ الطباعة: ${_formatDate(DateTime.now())}</div>
-        </div>
-    ''');
-
-    if (_salesStats != null) {
-      buffer.writeln('''
-        <div class="stats-grid">
-            <div class="stat-card blue">
-                <div class="stat-value">${_salesStats!['totalInvoices']}</div>
-                <div class="stat-label">إجمالي الفواتير</div>
-            </div>
-            <div class="stat-card green">
-                <div class="stat-value">${(_salesStats!['totalSales'] ?? 0.0).toStringAsFixed(2)} $currency</div>
-                <div class="stat-label">إجمالي المبيعات</div>
-            </div>
-            <div class="stat-card orange">
-                <div class="stat-value">${(_salesStats!['averageSale'] ?? 0.0).toStringAsFixed(2)} $currency</div>
-                <div class="stat-label">متوسط البيع</div>
-            </div>
-            <div class="stat-card red">
-                <div class="stat-value">${(_salesStats!['totalDiscounts'] ?? 0.0).toStringAsFixed(2)} $currency</div>
-                <div class="stat-label">إجمالي الخصومات</div>
-            </div>
-        </div>
-      ''');
-    }
-
-    if (_topSellingItems != null && _topSellingItems!.isNotEmpty) {
-      buffer.writeln('''
-        <div class="top-items">
-            <div class="section-title">الأصناف الأكثر مبيعاً</div>
-            <table class="items-table">
-                <thead>
-                    <tr>
-                        <th>الصنف</th>
-                        <th>الوزن</th>
-                        <th>العيار</th>
-                        <th>عدد المبيعات</th>
-                        <th>إجمالي الإيرادات</th>
-                    </tr>
-                </thead>
-                <tbody>
-      ''');
-
-      for (final item in _topSellingItems!.take(10)) {
-        buffer.writeln('''
-                    <tr>
-                        <td>${item['sku']}</td>
-                        <td>${item['weight_grams']}g</td>
-                        <td>${item['karat']}K</td>
-                        <td>${item['sales_count']}</td>
-                        <td>${(item['total_revenue'] as double).toStringAsFixed(2)} $currency</td>
-                    </tr>
-        ''');
+  Future<void> _exportSalesCsv() async {
+    try {
+      final invoiceRepo = ref.read(invoiceRepositoryProvider);
+      final invoices = await invoiceRepo.getInvoicesByDateRange(
+        startDate: _startDate,
+        endDate: _endDate,
+        categoryId: _categoryId,
+        paymentMethod: _paymentMethod,
+        itemLocation: _inventoryLocationFilter,
+      );
+      if (invoices.isEmpty) {
+        _showErrorMessage('لا توجد فواتير في الفترة/الفلاتر المحددة');
+        return;
       }
-
-      buffer.writeln('''
-                </tbody>
-            </table>
-        </div>
-      ''');
+      final path = await ReportService().exportSalesReportToCSV(
+        invoices: invoices,
+        startDate: _startDate,
+        endDate: _endDate,
+      );
+      final uri = Uri.file(path);
+      if (await canLaunchUrl(uri)) {
+        await launchUrl(uri);
+      }
+      _showSuccessMessage('تم إنشاء ملف CSV');
+    } catch (e) {
+      _showErrorMessage('فشل تصدير CSV: $e');
     }
-
-    buffer.writeln('''
-        <div class="footer">
-            <p>تقرير من نظام جوهر</p>
-            <p>مجوهرات جوهر - جودة وثقة</p>
-        </div>
-    </div>
-    
-    <script>
-        // Auto-print when page loads for print function
-        if (window.location.href.includes('print')) {
-            window.onload = function() {
-                setTimeout(function() {
-                    window.print();
-                }, 1000);
-            };
-        }
-    </script>
-</body>
-</html>
-    ''');
-
-    return buffer.toString();
   }
 
   void _showSuccessMessage(String message) {
@@ -1061,67 +1549,7 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
     );
   }
 
-  Future<void> _generateWeeklyReport() async {
-    final now = DateTime.now();
-    final startOfWeek = now.subtract(Duration(days: now.weekday - 1));
-    final endOfWeek = startOfWeek.add(const Duration(days: 6));
-
-    setState(() {
-      _startDate = startOfWeek;
-      _endDate = endOfWeek;
-    });
-
-    await _loadReports();
-    _showReportOptions('تقرير أسبوعي');
-  }
-
-  Future<void> _generateMonthlyReport() async {
-    final now = DateTime.now();
-    final startOfMonth = DateTime(now.year, now.month, 1);
-    final endOfMonth = DateTime(now.year, now.month + 1, 0);
-
-    setState(() {
-      _startDate = startOfMonth;
-      _endDate = endOfMonth;
-    });
-
-    await _loadReports();
-    _showReportOptions('تقرير شهري');
-  }
-
-  void _showReportOptions(String reportType) {
-    showCupertinoModalPopup(
-      context: context,
-      builder: (context) => CupertinoActionSheet(
-        title: Text(reportType),
-        message: const Text('اختر الإجراء المطلوب'),
-        actions: [
-          CupertinoActionSheetAction(
-            child: const Text('عرض التقرير'),
-            onPressed: () => Navigator.pop(context),
-          ),
-          CupertinoActionSheetAction(
-            child: const Text('طباعة التقرير'),
-            onPressed: () {
-              Navigator.pop(context);
-              _printReport();
-            },
-          ),
-          CupertinoActionSheetAction(
-            child: const Text('تصدير التقرير'),
-            onPressed: () {
-              Navigator.pop(context);
-              _exportReport();
-            },
-          ),
-        ],
-        cancelButton: CupertinoActionSheetAction(
-          child: const Text('إلغاء'),
-          onPressed: () => Navigator.pop(context),
-        ),
-      ),
-    );
-  }
+  // Removed legacy quick report generators (replaced by command bar shortcuts)
 }
 
 // ===================== Advanced Report Modal Widgets =====================
@@ -1505,10 +1933,7 @@ class _TopCustomersModal extends StatelessWidget {
                 if (c['customerPhone'].isNotEmpty)
                   Text(
                     c['customerPhone'],
-                    style: const TextStyle(
-                      fontSize: 12,
-                      color: CupertinoColors.secondaryLabel,
-                    ),
+                    style: TextStyle(fontSize: 12, color: Colors.grey),
                   ),
               ],
             ),
@@ -1824,7 +2249,14 @@ class _ComparisonReportModal extends StatelessWidget {
     final previous = data['previous'] as Map<String, dynamic>;
     final growth = data['growth'] as Map<String, dynamic>;
 
-    String _fmtPct(double v) => '${v.toStringAsFixed(1)}%';
+    double asDoubleSafe(dynamic v) {
+      if (v is double) return v;
+      if (v is int) return v.toDouble();
+      if (v is num) return v.toDouble();
+      return double.tryParse(v.toString()) ?? 0.0;
+    }
+
+    String formatPercent(double v) => '${v.toStringAsFixed(1)}%';
     Widget diffRow(String label, double curr, double prev, double pct) {
       final color = pct > 0
           ? CupertinoColors.activeGreen
@@ -1859,7 +2291,7 @@ class _ComparisonReportModal extends StatelessWidget {
             SizedBox(
               width: 70,
               child: Text(
-                _fmtPct(pct),
+                formatPercent(pct),
                 textAlign: TextAlign.center,
                 style: TextStyle(color: color, fontWeight: FontWeight.bold),
               ),
@@ -1936,27 +2368,27 @@ class _ComparisonReportModal extends StatelessWidget {
                         const SizedBox(height: 8),
                         diffRow(
                           'المبيعات',
-                          current['totalSales'],
-                          previous['totalSales'],
-                          growth['salesGrowth'],
+                          asDoubleSafe(current['totalSales']),
+                          asDoubleSafe(previous['totalSales']),
+                          asDoubleSafe(growth['salesGrowth']),
                         ),
                         diffRow(
                           'عدد الفواتير',
-                          current['invoiceCount'].toDouble(),
-                          previous['invoiceCount'].toDouble(),
-                          growth['invoiceGrowth'],
+                          asDoubleSafe(current['invoiceCount']),
+                          asDoubleSafe(previous['invoiceCount']),
+                          asDoubleSafe(growth['invoiceGrowth']),
                         ),
                         diffRow(
                           'متوسط الفاتورة',
-                          current['averageSale'],
-                          previous['averageSale'],
-                          growth['averageGrowth'],
+                          asDoubleSafe(current['averageSale']),
+                          asDoubleSafe(previous['averageSale']),
+                          asDoubleSafe(growth['averageGrowth']),
                         ),
                         diffRow(
                           'الخصومات',
-                          current['discounts'],
-                          previous['discounts'],
-                          growth['discountChange'],
+                          asDoubleSafe(current['discounts']),
+                          asDoubleSafe(previous['discounts']),
+                          asDoubleSafe(growth['discountChange']),
                         ),
                       ],
                     ),
@@ -1992,15 +2424,35 @@ class _CashFlowReportModal extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  _cashRow('التدفقات الداخلة (مبيعات)', data['cashIn'], CupertinoColors.activeGreen),
+                  _cashRow(
+                    'التدفقات الداخلة (مبيعات)',
+                    data['cashIn'],
+                    CupertinoColors.activeGreen,
+                  ),
                   const SizedBox(height: 8),
-                  _cashRow('تكلفة البضاعة (خروج)', data['inventoryCost'], CupertinoColors.systemRed),
+                  _cashRow(
+                    'تكلفة البضاعة (خروج)',
+                    data['inventoryCost'],
+                    CupertinoColors.systemRed,
+                  ),
                   const SizedBox(height: 8),
-                  _cashRow('مصروفات تشغيلية', data['operatingExpenses'], CupertinoColors.systemOrange),
+                  _cashRow(
+                    'مصروفات تشغيلية',
+                    data['operatingExpenses'],
+                    CupertinoColors.systemOrange,
+                  ),
                   const SizedBox(height: 8),
-                  _cashRow('إجمالي التدفقات الخارجة', data['cashOut'], CupertinoColors.destructiveRed),
+                  _cashRow(
+                    'إجمالي التدفقات الخارجة',
+                    data['cashOut'],
+                    CupertinoColors.destructiveRed,
+                  ),
                   const SizedBox(height: 8),
-                  _cashRow('صافي التدفق', data['netCash'], CupertinoColors.activeBlue),
+                  _cashRow(
+                    'صافي التدفق',
+                    data['netCash'],
+                    CupertinoColors.activeBlue,
+                  ),
                   const SizedBox(height: 20),
                   const Text(
                     'حسب طريقة الدفع',
@@ -2171,10 +2623,12 @@ Widget _modalHeader(BuildContext context, String title) {
     child: Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
-        CupertinoButton(
-          padding: EdgeInsets.zero,
-          onPressed: () => Navigator.pop(context),
-          child: const Text('إغلاق'),
+        SizedBox(
+          width: 100,
+          child: AppButton.secondary(
+            text: 'إغلاق',
+            onPressed: () => Navigator.pop(context),
+          ),
         ),
         Text(
           title,

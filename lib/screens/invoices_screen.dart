@@ -1,4 +1,5 @@
 import 'package:flutter/cupertino.dart';
+import 'package:fluent_ui/fluent_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 
@@ -42,41 +43,49 @@ class _InvoicesScreenState extends ConsumerState<InvoicesScreen> {
     final invoicesAsync = ref.watch(invoiceNotifierProvider);
     final currency = ref.watch(currencyProvider);
 
-    return AdaptiveScaffold(
-      title: 'الفواتير',
-      actions: [
-        CupertinoButton(
-          padding: EdgeInsets.zero,
-          onPressed: () => ref.read(invoiceNotifierProvider.notifier).refresh(),
-          child: const Icon(CupertinoIcons.refresh),
-        ),
-      ],
-      body: GestureDetector(
-        onTap: () {
-          FocusScope.of(context).unfocus();
-        },
-        child: Column(
-          children: [
-            Padding(
-              padding: const EdgeInsets.all(16.0),
-              child: CupertinoSearchTextField(
-                controller: _searchController,
-                placeholder: 'بحث برقم الفاتورة أو اسم العميل...',
-              ),
+    return Container(
+      color: Color(0xfff6f8fa), // خلفية موحدة
+      child: AdaptiveScaffold(
+        title: 'الفواتير',
+        commandBarItems: [
+          CommandBarButton(
+            icon: const Icon(FluentIcons.refresh, size: 20),
+            label: const Text(
+              'تحديث',
+              style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
             ),
-            Expanded(
-              child: invoicesAsync.when(
-                data: (invoices) => _buildInvoicesList(invoices, currency),
-                loading: () =>
-                    const Center(child: CupertinoActivityIndicator()),
-                error: (err, stack) => AppLoadingErrorWidget(
-                  title: 'خطأ في تحميل الفواتير',
-                  message: err.toString(),
-                  onRetry: () => ref.refresh(invoiceNotifierProvider),
+            onPressed: () =>
+                ref.read(invoiceNotifierProvider.notifier).refresh(),
+          ),
+        ],
+        body: GestureDetector(
+          onTap: () {
+            FocusScope.of(context).unfocus();
+          },
+          child: Column(
+            children: [
+              Padding(
+                padding: const EdgeInsets.all(16.0),
+                child: TextBox(
+                  controller: _searchController,
+                  placeholder:
+                      'بحث برقم الفاتورة أو اسم العميل... (اضغط Enter)',
+                  onSubmitted: (_) {},
                 ),
               ),
-            ),
-          ],
+              Expanded(
+                child: invoicesAsync.when(
+                  data: (invoices) => _buildInvoicesList(invoices, currency),
+                  loading: () => const Center(child: ProgressRing()),
+                  error: (err, stack) => AppLoadingErrorWidget(
+                    title: 'خطأ في تحميل الفواتير',
+                    message: err.toString(),
+                    onRetry: () => ref.refresh(invoiceNotifierProvider),
+                  ),
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -120,7 +129,7 @@ class _InvoicesScreenState extends ConsumerState<InvoicesScreen> {
           },
         );
       },
-      loading: () => const Center(child: CupertinoActivityIndicator()),
+      loading: () => const Center(child: ProgressRing()),
       error: (error, stack) => AppLoadingErrorWidget(
         title: 'خطأ في تحميل العملاء',
         message: error.toString(),
@@ -134,19 +143,8 @@ class _InvoicesScreenState extends ConsumerState<InvoicesScreen> {
     AsyncValue<String> currency,
     Customer customer,
   ) {
-    return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+    return Card(
       padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: CupertinoColors.systemBackground,
-        borderRadius: BorderRadius.circular(12),
-        boxShadow: [
-          BoxShadow(
-            color: CupertinoColors.black.withValues(alpha: 0.1),
-            blurRadius: 5,
-          ),
-        ],
-      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -163,10 +161,10 @@ class _InvoicesScreenState extends ConsumerState<InvoicesScreen> {
               currency.when(
                 data: (curr) => Text(
                   '${invoice.total.toStringAsFixed(2)} $curr',
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontWeight: FontWeight.bold,
                     fontSize: 16,
-                    color: CupertinoColors.activeGreen,
+                    color: Colors.green,
                   ),
                 ),
                 loading: () => const CupertinoActivityIndicator(),
@@ -183,35 +181,25 @@ class _InvoicesScreenState extends ConsumerState<InvoicesScreen> {
           const SizedBox(height: 12),
           Row(
             children: [
-              CupertinoButton(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 12,
-                  vertical: 4,
-                ),
-                color: CupertinoColors.activeBlue,
-                child: const Text(
-                  'طباعة حرارية',
-                  style: TextStyle(fontSize: 12),
-                ),
+              FilledButton(
                 onPressed: () => _reprintInvoice(
                   invoice,
                   mode: InvoicePrintMode.thermal,
                   customer: customer,
                 ),
+                child: const Text(
+                  'طباعة حرارية',
+                  style: TextStyle(fontSize: 12),
+                ),
               ),
               const SizedBox(width: 8),
-              CupertinoButton(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 12,
-                  vertical: 4,
-                ),
-                color: CupertinoColors.systemGrey,
-                child: const Text('طباعة HTML', style: TextStyle(fontSize: 12)),
+              Button(
                 onPressed: () => _reprintInvoice(
                   invoice,
                   mode: InvoicePrintMode.html,
                   customer: customer,
                 ),
+                child: const Text('طباعة HTML', style: TextStyle(fontSize: 12)),
               ),
             ],
           ),
@@ -227,7 +215,6 @@ class _InvoicesScreenState extends ConsumerState<InvoicesScreen> {
   }) async {
     try {
       // لا توجد عناصر محفوظة للفواتير حالياً (invoice_items) — سيتم استخدام بيانات مبسطة
-      // TODO: عند تنفيذ حفظ invoice_items يجب جلبها هنا
       final invoiceRepo = ref.read(invoiceRepositoryProvider);
       final items = await invoiceRepo.getInvoiceCartItems(invoice.id!);
       final printer = PrinterFacade();
@@ -241,15 +228,15 @@ class _InvoicesScreenState extends ConsumerState<InvoicesScreen> {
       );
     } catch (e) {
       if (mounted) {
-        showCupertinoDialog(
+        showDialog(
           context: context,
-          builder: (c) => CupertinoAlertDialog(
+          builder: (c) => ContentDialog(
             title: const Text('خطأ'),
             content: Text('فشل في إعادة الطباعة: $e'),
             actions: [
-              CupertinoDialogAction(
-                child: const Text('موافق'),
+              FilledButton(
                 onPressed: () => Navigator.pop(c),
+                child: const Text('موافق'),
               ),
             ],
           ),

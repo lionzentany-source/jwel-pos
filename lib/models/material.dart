@@ -47,21 +47,24 @@ class Material {
 
   @override
   String toString() {
-  return 'Material(id: $id, nameAr: $nameAr, isVariable: $isVariable, pricePerGram: $pricePerGram)';
+    return 'Material(id: $id, nameAr: $nameAr, isVariable: $isVariable, pricePerGram: $pricePerGram)';
   }
 
   @override
   bool operator ==(Object other) {
     if (identical(this, other)) return true;
-  return other is Material &&
-    other.id == id &&
-    other.nameAr == nameAr &&
-    other.isVariable == isVariable &&
-    other.pricePerGram == pricePerGram;
+    return other is Material &&
+        other.id == id &&
+        other.nameAr == nameAr &&
+        other.isVariable == isVariable &&
+        other.pricePerGram == pricePerGram;
   }
 
   @override
   int get hashCode {
-  return id.hashCode ^ nameAr.hashCode ^ isVariable.hashCode ^ pricePerGram.hashCode;
+    return id.hashCode ^
+        nameAr.hashCode ^
+        isVariable.hashCode ^
+        pricePerGram.hashCode;
   }
 }

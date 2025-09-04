@@ -1,18 +1,25 @@
 import 'package:flutter/cupertino.dart';
+import 'package:fluent_ui/fluent_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:package_info_plus/package_info_plus.dart';
+import '../widgets/branded_logo.dart';
 
 import '../widgets/adaptive_scaffold.dart';
+import '../widgets/app_button.dart';
 import '../providers/settings_provider.dart';
 import '../providers/user_provider.dart';
 import '../providers/material_provider.dart';
 import 'manage_categories_screen.dart';
 import 'manage_materials_screen.dart';
-import 'manage_users_screen.dart';
+// removed direct manage/advanced screens; use unified instead
+import 'unified_user_management_screen.dart';
 import 'backup_management_screen.dart';
-import 'advanced_user_management_screen.dart';
 import 'rfid_settings_screen.dart';
+import 'rfid_assignment_screen.dart';
+import 'anti_theft_settings_screen.dart';
 import 'print_preview_screen.dart';
 import '../services/real_printer_service.dart';
+import 'package:printing/printing.dart' show Printer;
 
 class SettingsScreen extends ConsumerStatefulWidget {
   const SettingsScreen({super.key});
@@ -26,13 +33,17 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   Widget build(BuildContext context) {
     final settings = ref.watch(settingsNotifierProvider);
 
-    return AdaptiveScaffold(
-      title: 'الإعدادات',
-      body: settings.when(
-        data: (settingsMap) => _buildSettingsList(context, settingsMap),
-        loading: () => const Center(child: CupertinoActivityIndicator()),
-        error: (err, stack) =>
-            Center(child: Text('خطأ في تحميل الإعدادات: $err')),
+    return Container(
+      color: Color(0xfff6f8fa), // خلفية موحدة
+      child: AdaptiveScaffold(
+        title: 'الإعدادات',
+        showBackButton: true,
+        body: settings.when(
+          data: (settingsMap) => _buildSettingsList(context, settingsMap),
+          loading: () => const Center(child: ProgressRing()),
+          error: (err, stack) =>
+              Center(child: Text('خطأ في تحميل الإعدادات: $err')),
+        ),
       ),
     );
   }
@@ -56,6 +67,33 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
         padding: const EdgeInsets.all(16.0),
         child: Column(
           children: [
+            FutureBuilder<PackageInfo>(
+              future: PackageInfo.fromPlatform(),
+              builder: (context, snapshot) {
+                final version = snapshot.data?.version ?? '';
+                return Padding(
+                  padding: const EdgeInsets.only(bottom: 24),
+                  child: Column(
+                    children: [
+                      const BrandedLogo(size: 96),
+                      const SizedBox(height: 12),
+                      const Text(
+                        'نظام جوهر',
+                        style: TextStyle(
+                          fontSize: 20,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        'الإصدار $version',
+                        style: FluentTheme.of(context).typography.caption,
+                      ),
+                    ],
+                  ),
+                );
+              },
+            ),
             _buildSettingsCard('إعدادات المتجر', [
               _buildTextField('اسم المتجر', storeNameController, (value) {
                 ref
@@ -81,16 +119,20 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                   final materialsState = ref.watch(materialNotifierProvider);
                   return materialsState.when(
                     data: (materials) {
-                      final variableMaterials = materials.where((m) => m.isVariable).toList();
+                      final variableMaterials = materials
+                          .where((m) => m.isVariable)
+                          .toList();
                       if (variableMaterials.isEmpty) {
-                        return const Text(
+                        return Text(
                           'لا توجد مواد متغيرة. يمكنك تعيين ذلك من إدارة المواد الخام.',
-                          style: TextStyle(color: CupertinoColors.secondaryLabel, fontSize: 14),
+                          style: FluentTheme.of(context).typography.caption,
                         );
                       }
                       return Column(
                         children: variableMaterials.map((m) {
-                          final controller = TextEditingController(text: m.pricePerGram.toString());
+                          final controller = TextEditingController(
+                            text: m.pricePerGram.toString(),
+                          );
                           return Padding(
                             padding: const EdgeInsets.only(bottom: 12),
                             child: Row(
@@ -98,32 +140,46 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                                 Expanded(
                                   child: Text(
                                     m.nameAr,
-                                    style: const TextStyle(fontWeight: FontWeight.w600),
+                                    style: const TextStyle(
+                                      fontWeight: FontWeight.w600,
+                                    ),
                                   ),
                                 ),
                                 SizedBox(
                                   width: 110,
-                                  child: CupertinoTextField(
+                                  child: TextBox(
                                     controller: controller,
-                                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-                                    keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                                    keyboardType:
+                                        const TextInputType.numberWithOptions(
+                                          decimal: true,
+                                        ),
                                     onSubmitted: (val) {
                                       final v = double.tryParse(val);
                                       if (v != null) {
-                                        ref.read(materialNotifierProvider.notifier).updateMaterialPrice(m.id!, v);
+                                        ref
+                                            .read(
+                                              materialNotifierProvider.notifier,
+                                            )
+                                            .updateMaterialPrice(m.id!, v);
                                       }
                                     },
                                   ),
                                 ),
                                 const SizedBox(width: 6),
-                                const Text('د.ل/جم', style: TextStyle(fontSize: 12, color: CupertinoColors.secondaryLabel)),
+                                const Text(
+                                  'د.ل/جم',
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    color: CupertinoColors.secondaryLabel,
+                                  ),
+                                ),
                               ],
                             ),
                           );
                         }).toList(),
                       );
                     },
-                    loading: () => const CupertinoActivityIndicator(),
+                    loading: () => const ProgressRing(),
                     error: (e, _) => Text('خطأ: $e'),
                   );
                 },
@@ -131,10 +187,10 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             ]),
             const SizedBox(height: 20),
             _buildSettingsCard('إدارة البيانات', [
-              _buildNavigationButton('إدارة الفئات', CupertinoIcons.tag, () {
+              _buildNavigationButton('إدارة الفئات', FluentIcons.tag, () {
                 Navigator.push(
                   context,
-                  CupertinoPageRoute(
+                  FluentPageRoute(
                     builder: (context) => const ManageCategoriesScreen(),
                   ),
                 );
@@ -142,11 +198,11 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
               const SizedBox(height: 12),
               _buildNavigationButton(
                 'إدارة المواد الخام',
-                CupertinoIcons.cube,
+                FluentIcons.cube_shape,
                 () {
                   Navigator.push(
                     context,
-                    CupertinoPageRoute(
+                    FluentPageRoute(
                       builder: (context) => const ManageMaterialsScreen(),
                     ),
                   );
@@ -158,26 +214,13 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                 const SizedBox(height: 12),
                 _buildNavigationButton(
                   'إدارة المستخدمين',
-                  CupertinoIcons.person_2,
+                  FluentIcons.people,
                   () {
                     Navigator.push(
                       context,
-                      CupertinoPageRoute(
-                        builder: (context) => const ManageUsersScreen(),
-                      ),
-                    );
-                  },
-                ),
-                const SizedBox(height: 12),
-                _buildNavigationButton(
-                  'إدارة متقدمة',
-                  CupertinoIcons.person_3,
-                  () {
-                    Navigator.push(
-                      context,
-                      CupertinoPageRoute(
+                      FluentPageRoute(
                         builder: (context) =>
-                            const AdvancedUserManagementScreen(),
+                            const UnifiedUserManagementScreen(),
                       ),
                     );
                   },
@@ -196,11 +239,11 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
               const SizedBox(height: 12),
               _buildNavigationButton(
                 'معاينة الطباعة',
-                CupertinoIcons.doc_text,
+                FluentIcons.document,
                 () {
                   Navigator.push(
                     context,
-                    CupertinoPageRoute(
+                    FluentPageRoute(
                       builder: (context) => const PrintPreviewScreen(),
                     ),
                   );
@@ -209,28 +252,83 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             ]),
             const SizedBox(height: 20),
             _buildSettingsCard('إعدادات RFID', [
+              Consumer(
+                builder: (context, ref, _) {
+                  final wedgeEnabled = ref.watch(
+                    posKeyboardWedgeEnabledProvider,
+                  );
+                  return wedgeEnabled.when(
+                    data: (enabled) => Padding(
+                      padding: const EdgeInsets.only(bottom: 12.0),
+                      child: Row(
+                        children: [
+                          const Expanded(
+                            child: Text(
+                              'تفعيل قارئ لوحة المفاتيح في نقطة البيع',
+                              style: TextStyle(fontWeight: FontWeight.w600),
+                            ),
+                          ),
+                          ToggleSwitch(
+                            checked: enabled,
+                            onChanged: (v) async {
+                              final repo = ref.read(settingsRepositoryProvider);
+                              await repo.setPosKeyboardWedgeEnabled(v);
+                              ref.invalidate(posKeyboardWedgeEnabledProvider);
+                            },
+                          ),
+                        ],
+                      ),
+                    ),
+                    loading: () => const ProgressRing(),
+                    error: (e, _) => Text('خطأ في تحميل الإعداد: $e'),
+                  );
+                },
+              ),
               _buildNavigationButton(
-                'إعدادات قارئ RFID',
-                CupertinoIcons.wifi,
+                'تعيين أجهزة القارئ حسب الشاشة',
+                FluentIcons.settings,
                 () {
                   Navigator.push(
                     context,
-                    CupertinoPageRoute(
-                      builder: (context) => const RfidSettingsScreen(),
+                    FluentPageRoute(
+                      builder: (context) => const RfidAssignmentScreen(),
                     ),
                   );
                 },
               ),
+              const SizedBox(height: 12),
+              _buildNavigationButton('إعدادات قارئ RFID', FluentIcons.wifi, () {
+                Navigator.push(
+                  context,
+                  FluentPageRoute(
+                    builder: (context) => const RfidSettingsScreen(),
+                  ),
+                );
+              }),
+              const SizedBox(height: 12),
+              _buildNavigationButton(
+                'منع السرقة (قارئ الباب)',
+                FluentIcons.shield,
+                () {
+                  Navigator.push(
+                    context,
+                    FluentPageRoute(
+                      builder: (context) => const AntiTheftSettingsScreen(),
+                    ),
+                  );
+                },
+              ),
+              // تمت إضافة القراءات المباشرة كعلامة تبويب داخل شاشة منع السرقة
             ]),
             const SizedBox(height: 20),
             _buildSettingsCard('النسخ الاحتياطي', [
               _buildNavigationButton(
                 'إدارة النسخ الاحتياطي',
-                CupertinoIcons.archivebox,
+                FluentIcons.archive,
                 () {
                   Navigator.push(
                     context,
-                    CupertinoPageRoute(
+                    FluentPageRoute(
                       builder: (context) => const BackupManagementScreen(),
                     ),
                   );
@@ -244,45 +342,46 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   }
 
   void _showPrinterSettings(BuildContext context) {
-    showCupertinoModalPopup(
+    showDialog(
       context: context,
-      builder: (context) => CupertinoActionSheet(
+      builder: (context) => ContentDialog(
         title: const Text('إعدادات الطباعة العادية'),
+        content: const Text('اختر إجراءً:'),
         actions: [
-          CupertinoActionSheetAction(
+          Button(
             child: const Text('اختيار طابعة'),
             onPressed: () {
               Navigator.pop(context);
               _openPrinterSelectionDialog(context);
             },
           ),
-          CupertinoActionSheetAction(
+          Button(
             child: const Text('ربط طابعة بلوتوث'),
             onPressed: () {
               Navigator.pop(context);
               _connectBluetoothPrinter(context);
             },
           ),
-          CupertinoActionSheetAction(
+          FilledButton(
             child: const Text('اختبار الطباعة'),
             onPressed: () {
               Navigator.pop(context);
               _testPrint(context);
             },
           ),
+          Button(
+            child: const Text('إلغاء'),
+            onPressed: () => Navigator.pop(context),
+          ),
         ],
-        cancelButton: CupertinoActionSheetAction(
-          child: const Text('إلغاء'),
-          onPressed: () => Navigator.pop(context),
-        ),
       ),
     );
   }
 
   void _connectBluetoothPrinter(BuildContext context) {
-    showCupertinoDialog(
+    showDialog(
       context: context,
-      builder: (context) => CupertinoAlertDialog(
+      builder: (context) => ContentDialog(
         title: const Text('ربط طابعة بلوتوث'),
         content: const Column(
           children: [
@@ -293,7 +392,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
           ],
         ),
         actions: [
-          CupertinoDialogAction(
+          Button(
             onPressed: () => Navigator.pop(context),
             child: const Text('إلغاء'),
           ),
@@ -306,9 +405,24 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     try {
       if (!context.mounted) return; // تأكد من بقاء الواجهة
       final printerService = RealPrinterService();
-      final defaultPrinter = await printerService.getDefaultPrinter();
+      final settingsRepo = ref.read(settingsRepositoryProvider);
+      final preferredName = await settingsRepo.getDefaultPrinterName();
+      Printer? defaultPrinter;
+      List<Printer> candidates = [];
+
+      if (preferredName != null && preferredName.trim().isNotEmpty) {
+        candidates = await printerService.findPrintersByName(preferredName);
+        if (candidates.length == 1) {
+          defaultPrinter = candidates.first;
+        } else if (candidates.isEmpty) {
+          defaultPrinter = await printerService.getDefaultPrinter();
+        }
+      } else {
+        defaultPrinter = await printerService.getDefaultPrinter();
+      }
       if (!context.mounted) return; // بعد الانتظار
 
+      if (!context.mounted) return;
       if (defaultPrinter == null) {
         _showMessage(
           context,
@@ -319,37 +433,57 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
 
       // حفظ مرجع للـ Navigator لتفادي استخدام context غير صالح لاحقاً
       final navigator = Navigator.of(context);
-      showCupertinoDialog(
+      showDialog(
         context: context,
-        builder: (dialogCtx) => CupertinoAlertDialog(
+        builder: (dialogCtx) => ContentDialog(
           title: const Text('اختبار الطباعة'),
-          content: Text(
-            'هل تريد طباعة صفحة اختبار على:\n${defaultPrinter.name}',
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('الطابعة المختارة حالياً: ${defaultPrinter!.name}'),
+              if (preferredName != null && preferredName.isNotEmpty)
+                Padding(
+                  padding: const EdgeInsets.only(top: 8.0),
+                  child: Text(
+                    'مفضّلة حسب الإعدادات: $preferredName',
+                    style: const TextStyle(color: Color(0xFF6B7280)),
+                  ),
+                ),
+              const SizedBox(height: 12),
+              const Text('هل تريد طباعة صفحة اختبار الآن؟'),
+            ],
           ),
           actions: [
-            CupertinoDialogAction(
+            Button(
               onPressed: () {
                 if (mounted) navigator.pop();
               },
               child: const Text('إلغاء'),
             ),
-            CupertinoDialogAction(
-              isDefaultAction: true,
+            if (candidates.length > 1)
+              Button(
+                onPressed: () {
+                  navigator.pop();
+                  _showCandidateChooser(context, candidates);
+                },
+                child: const Text('اختيار من مطابقات متعددة'),
+              ),
+            FilledButton(
               onPressed: () async {
                 if (context.mounted) navigator.pop();
                 if (!context.mounted) return;
 
-                // عرض مؤشر الطباعة (نستخدم navigator نفسه)
-                showCupertinoDialog(
+                // عرض مؤشر الطباعة
+                showDialog(
                   context: context,
-                  barrierDismissible: false,
-                  builder: (_) => const CupertinoAlertDialog(
+                  builder: (_) => const ContentDialog(
                     title: Text('جاري الطباعة'),
                     content: Column(
                       mainAxisSize: MainAxisSize.min,
                       children: [
                         SizedBox(height: 16),
-                        CupertinoActivityIndicator(),
+                        ProgressRing(),
                         SizedBox(height: 16),
                         Text('يرجى الانتظار...'),
                       ],
@@ -357,7 +491,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                   ),
                 );
 
-                final success = await printerService.testPrint(defaultPrinter);
+                final success = await printerService.testPrint(defaultPrinter!);
                 if (!context.mounted) return;
                 navigator.pop(); // إغلاق مؤشر الطباعة
                 _showMessage(
@@ -378,19 +512,73 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     }
   }
 
+  void _showCandidateChooser(BuildContext context, List<Printer> candidates) {
+    showDialog(
+      context: context,
+      builder: (_) => ContentDialog(
+        title: const Text('مطابقات متعددة للاسم'),
+        content: SizedBox(
+          width: 360,
+          height: 240,
+          child: SingleChildScrollView(
+            child: Column(
+              children: [
+                for (final p in candidates)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 8.0),
+                    child: Button(
+                      onPressed: () async {
+                        // Close chooser first
+                        Navigator.pop(context);
+                        final settingsRepo = ref.read(
+                          settingsRepositoryProvider,
+                        );
+                        await settingsRepo.setDefaultPrinterName(p.name);
+                        if (!context.mounted) return;
+                        _showMessage(
+                          context,
+                          'تم تعيين ${p.name} كطابعة مفضلة.',
+                        );
+                      },
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text(p.name),
+                          if (p.isDefault)
+                            const Text(
+                              'افتراضية من النظام',
+                              style: TextStyle(color: Color(0xFF6B7280)),
+                            ),
+                        ],
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        ),
+        actions: [
+          Button(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('إغلاق'),
+          ),
+        ],
+      ),
+    );
+  }
+
   void _openPrinterSelectionDialog(BuildContext context) async {
     if (!context.mounted) return;
     final navigator = Navigator.of(context);
-    showCupertinoDialog(
+    showDialog(
       context: context,
-      barrierDismissible: false,
-      builder: (_) => const CupertinoAlertDialog(
+      builder: (_) => const ContentDialog(
         title: Text('البحث عن طابعات'),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             SizedBox(height: 16),
-            CupertinoActivityIndicator(),
+            ProgressRing(),
             SizedBox(height: 16),
             Text('جاري البحث عن طابعات متاحة...'),
           ],
@@ -416,9 +604,9 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   }
 
   void _showPrintersList(BuildContext context, List<dynamic> printers) {
-    showCupertinoDialog(
+    showDialog(
       context: context,
-      builder: (context) => CupertinoAlertDialog(
+      builder: (context) => ContentDialog(
         title: const Text('اختيار طابعة'),
         content: SizedBox(
           width: 300,
@@ -430,8 +618,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                 Text('تم العثور على ${printers.length} طابعة:'),
                 const SizedBox(height: 16),
                 ...printers.map(
-                  (printer) => CupertinoButton(
-                    padding: const EdgeInsets.symmetric(vertical: 8),
+                  (printer) => Button(
                     onPressed: () {
                       Navigator.pop(context);
                       _confirmPrinterSelection(context, printer);
@@ -447,7 +634,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
           ),
         ),
         actions: [
-          CupertinoDialogAction(
+          Button(
             onPressed: () => Navigator.pop(context),
             child: const Text('إلغاء'),
           ),
@@ -460,13 +647,13 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     // حفظ اسم الطابعة المختارة في الإعدادات
     final settingsRepo = ref.read(settingsRepositoryProvider);
     settingsRepo.setDefaultPrinterName(printer.name);
-    showCupertinoDialog(
+    showDialog(
       context: context,
-      builder: (context) => CupertinoAlertDialog(
+      builder: (context) => ContentDialog(
         title: const Text('تم اختيار الطابعة'),
         content: Text('تم تعيين ${printer.name} كطابعة افتراضية للتطبيق.'),
         actions: [
-          CupertinoDialogAction(
+          FilledButton(
             onPressed: () => Navigator.pop(context),
             child: const Text('موافق'),
           ),
@@ -476,20 +663,19 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   }
 
   void _showNoPrintersFound(BuildContext context) {
-    showCupertinoDialog(
+    showDialog(
       context: context,
-      builder: (context) => CupertinoAlertDialog(
+      builder: (context) => ContentDialog(
         title: const Text('لا توجد طابعات'),
         content: const Text(
           'لم يتم العثور على طابعات متاحة.\n\nتأكد من:\n• توصيل الطابعة\n• تشغيل الطابعة\n• تثبيت برامج التشغيل',
         ),
         actions: [
-          CupertinoDialogAction(
+          Button(
             onPressed: () => Navigator.pop(context),
             child: const Text('موافق'),
           ),
-          CupertinoDialogAction(
-            isDefaultAction: true,
+          FilledButton(
             onPressed: () {
               Navigator.pop(context);
               _openPrinterSelectionDialog(context);
@@ -502,13 +688,13 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   }
 
   void _showPrinterError(BuildContext context, String error) {
-    showCupertinoDialog(
+    showDialog(
       context: context,
-      builder: (context) => CupertinoAlertDialog(
+      builder: (context) => ContentDialog(
         title: const Text('خطأ في الطباعة'),
         content: Text('حدث خطأ أثناء البحث عن الطابعات:\n$error'),
         actions: [
-          CupertinoDialogAction(
+          FilledButton(
             onPressed: () => Navigator.pop(context),
             child: const Text('موافق'),
           ),
@@ -518,13 +704,13 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   }
 
   void _showMessage(BuildContext context, String message) {
-    showCupertinoDialog(
+    showDialog(
       context: context,
-      builder: (context) => CupertinoAlertDialog(
-        title: const Text('نجح'),
+      builder: (context) => ContentDialog(
+        title: const Text('نجاح'),
         content: Text(message),
         actions: [
-          CupertinoDialogAction(
+          FilledButton(
             onPressed: () => Navigator.pop(context),
             child: const Text('حسناً'),
           ),
@@ -534,24 +720,19 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   }
 
   Widget _buildSettingsCard(String title, List<Widget> children) {
-    return Container(
+    return Card(
       padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: CupertinoColors.systemBackground,
-        borderRadius: BorderRadius.circular(12),
-        boxShadow: [
-          BoxShadow(
-            color: CupertinoColors.black.withValues(alpha: 0.1),
-            blurRadius: 5,
-          ),
-        ],
-      ),
+      backgroundColor: Color(0xffffffff), // أبيض نقي للبطاقات
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
             title,
-            style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+            style: const TextStyle(
+              fontSize: 18,
+              fontWeight: FontWeight.bold,
+              color: Color(0xff222b45),
+            ),
           ),
           const SizedBox(height: 16),
           ...children,
@@ -568,12 +749,9 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(
-          label,
-          style: const TextStyle(color: CupertinoColors.secondaryLabel),
-        ),
+        Text(label, style: FluentTheme.of(context).typography.caption),
         const SizedBox(height: 8),
-        CupertinoTextField(
+        TextBox(
           controller: controller,
           onSubmitted: (value) {
             if (label == 'اسم المتجر') {
@@ -597,32 +775,6 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     IconData icon,
     VoidCallback onPressed,
   ) {
-    return CupertinoButton(
-      padding: EdgeInsets.zero,
-      onPressed: onPressed,
-      child: Container(
-        padding: const EdgeInsets.all(16),
-        decoration: BoxDecoration(
-          color: CupertinoColors.systemGrey6,
-          borderRadius: BorderRadius.circular(8),
-        ),
-        child: Row(
-          children: [
-            Icon(icon, color: CupertinoColors.activeBlue),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Text(
-                title,
-                style: const TextStyle(color: CupertinoColors.label),
-              ),
-            ),
-            const Icon(
-              CupertinoIcons.chevron_right,
-              color: CupertinoColors.systemGrey,
-            ),
-          ],
-        ),
-      ),
-    );
+    return AppButton.nav(title: title, icon: icon, onPressed: onPressed);
   }
 }

@@ -3,6 +3,10 @@ import 'dart:convert';
 import '../models/printer_settings.dart';
 
 class SettingsRepository {
+  // مفاتيح شائعة الاستخدام
+  static const String kRequireAdminPasswordSetup =
+      'require_admin_password_setup';
+
   // حفظ اسم الطابعة الافتراضية
   Future<void> setDefaultPrinterName(String printerName) async {
     await _setSetting('default_printer_name', printerName);
@@ -64,13 +68,13 @@ class SettingsRepository {
   }
 
   Future<double?> getGoldPrice() async {
-  // Deprecated: kept for backward compatibility if called before migration cleanup
-  return null;
+    // Deprecated: kept for backward compatibility if called before migration cleanup
+    return null;
   }
 
   Future<double?> getSilverPrice() async {
-  // Deprecated
-  return null;
+    // Deprecated
+    return null;
   }
 
   Future<String?> getStoreName() async {
@@ -95,13 +99,13 @@ class SettingsRepository {
 
   // Setters
   Future<int> setGoldPrice(double price) async {
-  // Deprecated no-op
-  return 0;
+    // Deprecated no-op
+    return 0;
   }
 
   Future<int> setSilverPrice(double price) async {
-  // Deprecated no-op
-  return 0;
+    // Deprecated no-op
+    return 0;
   }
 
   Future<int> setStoreName(String name) async {
@@ -143,5 +147,25 @@ class SettingsRepository {
     } catch (_) {
       return null;
     }
+  }
+
+  // Flags & simple settings helpers
+  Future<bool> getBoolFlag(String key, {bool defaultValue = false}) async {
+    final v = await _getSetting(key);
+    if (v == null) return defaultValue;
+    return v.toLowerCase() == 'true' || v == '1';
+  }
+
+  Future<void> setBoolFlag(String key, bool value) async {
+    await _setSetting(key, value ? 'true' : 'false');
+  }
+
+  // Convenience helpers for specific flags
+  Future<bool> getPosKeyboardWedgeEnabled() async {
+    return await getBoolFlag('pos_keyboard_wedge_enabled', defaultValue: true);
+  }
+
+  Future<void> setPosKeyboardWedgeEnabled(bool enabled) async {
+    await setBoolFlag('pos_keyboard_wedge_enabled', enabled);
   }
 }

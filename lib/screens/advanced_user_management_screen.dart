@@ -1,8 +1,9 @@
 import 'package:flutter/cupertino.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../widgets/adaptive_scaffold.dart';
 import '../models/user.dart';
-import '../models/user_permission.dart' as perm;
+import '../models/user_permission.dart';
 import '../models/user_activity.dart';
 import '../services/user_activity_service.dart';
 import '../providers/user_provider.dart';
@@ -11,28 +12,33 @@ class AdvancedUserManagementScreen extends ConsumerStatefulWidget {
   const AdvancedUserManagementScreen({super.key});
 
   @override
-  ConsumerState<AdvancedUserManagementScreen> createState() => _AdvancedUserManagementScreenState();
+  ConsumerState<AdvancedUserManagementScreen> createState() =>
+      _AdvancedUserManagementScreenState();
 }
 
-class _AdvancedUserManagementScreenState extends ConsumerState<AdvancedUserManagementScreen> {
+class _AdvancedUserManagementScreenState
+    extends ConsumerState<AdvancedUserManagementScreen> {
   final UserActivityService _activityService = UserActivityService();
   int _selectedTabIndex = 0;
 
   @override
   Widget build(BuildContext context) {
-    return AdaptiveScaffold(
-      title: 'إدارة المستخدمين المتقدمة',
-      body: Column(
-        children: [
-          _buildTabBar(),
-          Expanded(
-            child: _selectedTabIndex == 0
-                ? _buildUsersTab()
-                : _selectedTabIndex == 1
-                    ? _buildPermissionsTab()
-                    : _buildActivityTab(),
-          ),
-        ],
+    return Container(
+      color: Color(0xfff6f8fa), // خلفية موحدة
+      child: AdaptiveScaffold(
+        title: 'إدارة المستخدمين المتقدمة',
+        body: Column(
+          children: [
+            _buildTabBar(),
+            Expanded(
+              child: _selectedTabIndex == 0
+                  ? _buildUsersTab()
+                  : _selectedTabIndex == 1
+                  ? _buildPermissionsTab()
+                  : _buildActivityTab(),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -41,8 +47,15 @@ class _AdvancedUserManagementScreenState extends ConsumerState<AdvancedUserManag
     return Container(
       margin: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: CupertinoColors.systemGrey6,
+        color: Color(0xffffffff), // أبيض نقي للبطاقات
         borderRadius: BorderRadius.circular(8),
+        boxShadow: [
+          BoxShadow(
+            color: Color(0xff0078d4).withAlpha(20),
+            blurRadius: 8,
+            offset: Offset(0, 2),
+          ),
+        ],
       ),
       child: CupertinoSlidingSegmentedControl<int>(
         groupValue: _selectedTabIndex,
@@ -67,7 +80,7 @@ class _AdvancedUserManagementScreenState extends ConsumerState<AdvancedUserManag
 
   Widget _buildUsersTab() {
     final usersAsync = ref.watch(allUsersProvider);
-    
+
     return usersAsync.when(
       data: (users) => Column(
         children: [
@@ -87,20 +100,9 @@ class _AdvancedUserManagementScreenState extends ConsumerState<AdvancedUserManag
   }
 
   Widget _buildUsersHeader(int userCount) {
-    return Container(
-      margin: const EdgeInsets.all(16),
+    return AdaptiveCard(
       padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: CupertinoColors.systemBackground,
-        borderRadius: BorderRadius.circular(12),
-        boxShadow: [
-          BoxShadow(
-            color: CupertinoColors.systemGrey.withValues(alpha: 0.1),
-            blurRadius: 8,
-            offset: const Offset(0, 2),
-          ),
-        ],
-      ),
+      backgroundColor: Color(0xffffffff),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
@@ -116,50 +118,38 @@ class _AdvancedUserManagementScreenState extends ConsumerState<AdvancedUserManag
                 style: const TextStyle(
                   fontSize: 24,
                   fontWeight: FontWeight.bold,
-                  color: CupertinoColors.activeBlue,
+                  color: Color(0xff0078D4),
                 ),
               ),
             ],
           ),
-          CupertinoButton.filled(
-            onPressed: _showAddUserDialog,
-            child: const Text('إضافة مستخدم'),
-          ),
+          AdaptiveButton(text: 'إضافة مستخدم', onPressed: _showAddUserDialog),
         ],
       ),
     );
   }
 
   Widget _buildUserCard(User user) {
-    final role = perm.UserRole.fromName(user.role.name);
-    
-    return Container(
-      margin: const EdgeInsets.only(bottom: 12),
+    final role = UserRole.values.firstWhere(
+      (e) => e.name == user.role.name,
+      orElse: () => UserRole.cashier,
+    );
+
+    return AdaptiveCard(
       padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: CupertinoColors.systemBackground,
-        borderRadius: BorderRadius.circular(12),
-        boxShadow: [
-          BoxShadow(
-            color: CupertinoColors.systemGrey.withValues(alpha: 0.1),
-            blurRadius: 4,
-            offset: const Offset(0, 2),
-          ),
-        ],
-      ),
+      backgroundColor: Color(0xffffffff),
       child: Row(
         children: [
           Container(
             width: 50,
             height: 50,
             decoration: BoxDecoration(
-              color: user.isActive ? CupertinoColors.activeGreen : CupertinoColors.systemGrey,
+              color: user.isActive
+                  ? CupertinoColors.activeGreen
+                  : CupertinoColors.systemGrey,
               borderRadius: BorderRadius.circular(25),
             ),
-            child: Icon(
-              CupertinoIcons.person,
-              color: CupertinoColors.white,
-            ),
+            child: Icon(CupertinoIcons.person, color: CupertinoColors.white),
           ),
           const SizedBox(width: 16),
           Expanded(
@@ -168,7 +158,10 @@ class _AdvancedUserManagementScreenState extends ConsumerState<AdvancedUserManag
               children: [
                 Text(
                   user.fullName,
-                  style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+                  style: const TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w600,
+                  ),
                 ),
                 const SizedBox(height: 4),
                 Text(
@@ -177,7 +170,10 @@ class _AdvancedUserManagementScreenState extends ConsumerState<AdvancedUserManag
                 ),
                 const SizedBox(height: 4),
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 4,
+                  ),
                   decoration: BoxDecoration(
                     color: CupertinoColors.activeBlue.withValues(alpha: 0.1),
                     borderRadius: BorderRadius.circular(12),
@@ -200,7 +196,9 @@ class _AdvancedUserManagementScreenState extends ConsumerState<AdvancedUserManag
                 width: 12,
                 height: 12,
                 decoration: BoxDecoration(
-                  color: user.isActive ? CupertinoColors.activeGreen : CupertinoColors.systemRed,
+                  color: user.isActive
+                      ? CupertinoColors.activeGreen
+                      : CupertinoColors.systemRed,
                   borderRadius: BorderRadius.circular(6),
                 ),
               ),
@@ -209,7 +207,9 @@ class _AdvancedUserManagementScreenState extends ConsumerState<AdvancedUserManag
                 user.isActive ? 'نشط' : 'معطل',
                 style: TextStyle(
                   fontSize: 10,
-                  color: user.isActive ? CupertinoColors.activeGreen : CupertinoColors.systemRed,
+                  color: user.isActive
+                      ? CupertinoColors.activeGreen
+                      : CupertinoColors.systemRed,
                 ),
               ),
             ],
@@ -236,27 +236,16 @@ class _AdvancedUserManagementScreenState extends ConsumerState<AdvancedUserManag
             style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
           ),
           const SizedBox(height: 16),
-          ...perm.UserRole.allRoles.map((role) => _buildRoleCard(role)),
+          ...UserRole.values.map((role) => _buildRoleCard(role)),
         ],
       ),
     );
   }
 
-  Widget _buildRoleCard(perm.UserRole role) {
-    return Container(
-      margin: const EdgeInsets.only(bottom: 16),
+  Widget _buildRoleCard(UserRole role) {
+    return AdaptiveCard(
       padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: CupertinoColors.systemBackground,
-        borderRadius: BorderRadius.circular(12),
-        boxShadow: [
-          BoxShadow(
-            color: CupertinoColors.systemGrey.withValues(alpha: 0.1),
-            blurRadius: 8,
-            offset: const Offset(0, 2),
-          ),
-        ],
-      ),
+      backgroundColor: Color(0xffffffff),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -265,7 +254,10 @@ class _AdvancedUserManagementScreenState extends ConsumerState<AdvancedUserManag
             children: [
               Text(
                 role.displayName,
-                style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
+                style: const TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.w600,
+                ),
               ),
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
@@ -289,20 +281,27 @@ class _AdvancedUserManagementScreenState extends ConsumerState<AdvancedUserManag
           Wrap(
             spacing: 8,
             runSpacing: 8,
-            children: role.permissions.map((permission) => Container(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-              decoration: BoxDecoration(
-                color: CupertinoColors.activeBlue.withValues(alpha: 0.1),
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: Text(
-                permission.displayName,
-                style: const TextStyle(
-                  fontSize: 10,
-                  color: CupertinoColors.activeBlue,
-                ),
-              ),
-            )).toList(),
+            children: role.permissions
+                .map(
+                  (permission) => Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 4,
+                    ),
+                    decoration: BoxDecoration(
+                      color: CupertinoColors.activeBlue.withValues(alpha: 0.1),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Text(
+                      permission.displayName,
+                      style: const TextStyle(
+                        fontSize: 10,
+                        color: CupertinoColors.activeBlue,
+                      ),
+                    ),
+                  ),
+                )
+                .toList(),
           ),
         ],
       ),
@@ -316,13 +315,13 @@ class _AdvancedUserManagementScreenState extends ConsumerState<AdvancedUserManag
         if (snapshot.connectionState == ConnectionState.waiting) {
           return const Center(child: CupertinoActivityIndicator());
         }
-        
+
         if (snapshot.hasError) {
           return Center(child: Text('خطأ: ${snapshot.error}'));
         }
-        
+
         final activities = snapshot.data ?? [];
-        
+
         return Column(
           children: [
             _buildActivityHeader(),
@@ -330,7 +329,8 @@ class _AdvancedUserManagementScreenState extends ConsumerState<AdvancedUserManag
               child: ListView.builder(
                 padding: const EdgeInsets.all(16),
                 itemCount: activities.length,
-                itemBuilder: (context, index) => _buildActivityItem(activities[index]),
+                itemBuilder: (context, index) =>
+                    _buildActivityItem(activities[index]),
               ),
             ),
           ],
@@ -340,20 +340,9 @@ class _AdvancedUserManagementScreenState extends ConsumerState<AdvancedUserManag
   }
 
   Widget _buildActivityHeader() {
-    return Container(
-      margin: const EdgeInsets.all(16),
+    return AdaptiveCard(
       padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: CupertinoColors.systemBackground,
-        borderRadius: BorderRadius.circular(12),
-        boxShadow: [
-          BoxShadow(
-            color: CupertinoColors.systemGrey.withValues(alpha: 0.1),
-            blurRadius: 8,
-            offset: const Offset(0, 2),
-          ),
-        ],
-      ),
+      backgroundColor: Color(0xffffffff),
       child: const Row(
         children: [
           Icon(CupertinoIcons.clock, color: CupertinoColors.activeBlue),
@@ -368,13 +357,9 @@ class _AdvancedUserManagementScreenState extends ConsumerState<AdvancedUserManag
   }
 
   Widget _buildActivityItem(UserActivity activity) {
-    return Container(
-      margin: const EdgeInsets.only(bottom: 8),
+    return AdaptiveCard(
       padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: CupertinoColors.systemGrey6,
-        borderRadius: BorderRadius.circular(8),
-      ),
+      backgroundColor: Color(0xffffffff),
       child: Row(
         children: [
           Container(
@@ -428,60 +413,48 @@ class _AdvancedUserManagementScreenState extends ConsumerState<AdvancedUserManag
   }
 
   void _showUserOptions(User user) {
-    showCupertinoModalPopup(
+    showDialog(
       context: context,
-      builder: (context) => CupertinoActionSheet(
+      builder: (context) => AlertDialog(
+        backgroundColor: const Color(0xfff6f8fa),
         title: Text(user.fullName),
-        actions: [
-          CupertinoActionSheetAction(
-            child: const Text('عرض التفاصيل'),
-            onPressed: () {
-              Navigator.pop(context);
-              _showUserDetails(user);
-            },
-          ),
-          CupertinoActionSheetAction(
-            child: const Text('تعديل الصلاحيات'),
-            onPressed: () {
-              Navigator.pop(context);
-              _showEditPermissions(user);
-            },
-          ),
-          CupertinoActionSheetAction(
-            child: Text(user.isActive ? 'تعطيل المستخدم' : 'تفعيل المستخدم'),
-            onPressed: () {
-              Navigator.pop(context);
-              _toggleUserStatus(user);
-            },
-          ),
-          if (user.role.name != 'admin')
-            CupertinoActionSheetAction(
-              isDestructiveAction: true,
-              child: const Text('حذف المستخدم'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            AdaptiveButton(
+              text: 'عرض التفاصيل',
               onPressed: () {
                 Navigator.pop(context);
-                _confirmDeleteUser(user);
+                _showUserDetails(user);
               },
             ),
-        ],
-        cancelButton: CupertinoActionSheetAction(
-          child: const Text('إلغاء'),
-          onPressed: () => Navigator.pop(context),
+            AdaptiveButton(
+              text: 'تعديل الصلاحيات',
+              onPressed: () {
+                Navigator.pop(context);
+                _showEditPermissions(user);
+              },
+            ),
+            AdaptiveButton(
+              text: user.isActive ? 'تعطيل المستخدم' : 'تفعيل المستخدم',
+              onPressed: () {
+                Navigator.pop(context);
+                _toggleUserStatus(user);
+              },
+            ),
+            if (user.role.name != 'admin')
+              AdaptiveButton(
+                text: 'حذف المستخدم',
+                onPressed: () {
+                  Navigator.pop(context);
+                  _confirmDeleteUser(user);
+                },
+              ),
+          ],
         ),
-      ),
-    );
-  }
-
-  void _showAddUserDialog() {
-    // سيتم تطوير نافذة إضافة مستخدم
-    showCupertinoDialog(
-      context: context,
-      builder: (context) => CupertinoAlertDialog(
-        title: const Text('إضافة مستخدم جديد'),
-        content: const Text('سيتم تطوير هذه الميزة قريباً'),
         actions: [
-          CupertinoDialogAction(
-            child: const Text('موافق'),
+          TextButton(
+            child: const Text('إلغاء'),
             onPressed: () => Navigator.pop(context),
           ),
         ],
@@ -489,19 +462,186 @@ class _AdvancedUserManagementScreenState extends ConsumerState<AdvancedUserManag
     );
   }
 
+  void _showAddUserDialog() {
+    final usernameController = TextEditingController();
+    final passwordController = TextEditingController();
+    final fullNameController = TextEditingController();
+    UserRole selectedRole = UserRole.manager;
+    showDialog(
+      context: context,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setState) => AlertDialog(
+          backgroundColor: const Color(0xfff6f8fa),
+          title: const Text('إضافة مستخدم جديد'),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TextField(
+                  controller: usernameController,
+                  decoration: const InputDecoration(labelText: 'اسم المستخدم'),
+                ),
+                TextField(
+                  controller: passwordController,
+                  decoration: const InputDecoration(labelText: 'كلمة المرور'),
+                  obscureText: true,
+                ),
+                TextField(
+                  controller: fullNameController,
+                  decoration: const InputDecoration(labelText: 'الاسم الكامل'),
+                ),
+                DropdownButton<UserRole>(
+                  value: selectedRole,
+                  items: UserRole.values
+                      .where((r) => r != UserRole.admin)
+                      .map(
+                        (role) => DropdownMenuItem(
+                          value: role,
+                          child: Text(role.displayName),
+                        ),
+                      )
+                      .toList(),
+                  onChanged: (role) {
+                    if (role != null) setState(() => selectedRole = role);
+                  },
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              child: const Text('إلغاء'),
+              onPressed: () => Navigator.pop(context),
+            ),
+            ElevatedButton(
+              child: const Text('حفظ'),
+              onPressed: () async {
+                try {
+                  final userService = ref.read(userServiceProvider);
+                  await userService.createUser(
+                    username: usernameController.text.trim(),
+                    password: passwordController.text.trim(),
+                    fullName: fullNameController.text.trim(),
+                    role: selectedRole,
+                  );
+                  if (!context.mounted) return;
+                  Navigator.of(context, rootNavigator: true).pop();
+                  setState(() {});
+                } catch (e) {
+                  if (!context.mounted) return;
+                  showDialog(
+                    context: context,
+                    builder: (dialogCtx) => AlertDialog(
+                      title: const Text('خطأ'),
+                      content: Text(e.toString()),
+                      actions: [
+                        TextButton(
+                          onPressed: () => Navigator.of(dialogCtx).pop(),
+                          child: const Text('موافق'),
+                        ),
+                      ],
+                    ),
+                  );
+                }
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   void _showUserDetails(User user) {
-    // سيتم تطوير شاشة تفاصيل المستخدم
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: const Color(0xfff6f8fa),
+        title: Text('تفاصيل المستخدم'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('الاسم الكامل: ${user.fullName}'),
+            Text('اسم المستخدم: @${user.username}'),
+            Text('الدور: ${user.role.displayName}'),
+            Text('الحالة: ${user.isActive ? 'نشط' : 'معطل'}'),
+            Text('تاريخ الإنشاء: ${user.createdAt.toLocal()}'),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('إغلاق'),
+          ),
+        ],
+      ),
+    );
   }
 
   void _showEditPermissions(User user) {
-    // سيتم تطوير شاشة تعديل الصلاحيات
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: const Color(0xfff6f8fa),
+        title: Text('تعديل صلاحيات المستخدم'),
+        content: Text('تغيير الدور الحالي: ${user.role.displayName}'),
+        actions: [
+          ...UserRole.values
+              .where((r) => r != UserRole.admin)
+              .map(
+                (role) => TextButton(
+                  child: Text(role.displayName),
+                  onPressed: () async {
+                    final userService = ref.read(userServiceProvider);
+                    await userService.updateUser(userId: user.id!, role: role);
+                    if (!context.mounted) return;
+                    Navigator.of(context, rootNavigator: true).pop();
+                    setState(() {});
+                  },
+                ),
+              ),
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('إلغاء'),
+          ),
+        ],
+      ),
+    );
   }
 
   void _toggleUserStatus(User user) {
-    // سيتم تطوير تفعيل/تعطيل المستخدم
+    final newStatus = !user.isActive;
+    final userService = ref.read(userServiceProvider);
+    userService.updateUser(userId: user.id!, isActive: newStatus).then((_) {
+      setState(() {});
+    });
   }
 
   void _confirmDeleteUser(User user) {
-    // سيتم تطوير حذف المستخدم
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: const Color(0xfff6f8fa),
+        title: Text('تأكيد حذف المستخدم'),
+        content: Text('هل أنت متأكد أنك تريد حذف المستخدم ${user.fullName}؟'),
+        actions: [
+          TextButton(
+            child: const Text('إلغاء'),
+            onPressed: () => Navigator.pop(context),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+            onPressed: () async {
+              final userService = ref.read(userServiceProvider);
+              await userService.deleteUser(user.id!);
+              if (!context.mounted) return;
+              Navigator.of(context, rootNavigator: true).pop();
+              setState(() {});
+            },
+            child: const Text('حذف'),
+          ),
+        ],
+      ),
+    );
   }
 }

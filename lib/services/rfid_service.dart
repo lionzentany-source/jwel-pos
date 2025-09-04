@@ -3,7 +3,9 @@ import 'dart:io';
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_libserialport/flutter_libserialport.dart';
+import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import '../utils/rfid_duplicate_filter.dart';
+import '../repositories/item_repository.dart';
 
 /// Enum to represent the status of the RFID reader
 enum RfidReaderStatus { disconnected, connecting, connected, scanning, error }
@@ -14,15 +16,17 @@ enum RfidReaderStatus { disconnected, connecting, connected, scanning, error }
 /// implementations or plugins for communicating with RFID readers.
 ///
 class RfidServiceReal {
-  static final RfidServiceReal _instance = RfidServiceReal._internal();
-  factory RfidServiceReal() => _instance;
-  RfidServiceReal._internal();
+  RfidServiceReal();
 
   // تشغيل صوت تنبيه عند كل قراءة (قابل للتغيير من صفحة الإعدادات)
   bool _beepOnRead = false;
   SerialPort? _serialPort; // منفذ تسلسلي مفتوح (إن وُجد)
   SerialPortReader? _serialReader;
   StreamSubscription<Uint8List>? _serialSubscription;
+  BluetoothDevice? _bleDevice;
+  BluetoothCharacteristic? _bleRx; // notifications from reader
+  BluetoothCharacteristic? _bleTx; // writes to reader
+  StreamSubscription<List<int>>? _bleNotifySub;
   void setBeepOnRead(bool value) {
     _beepOnRead = value;
     debugPrint('RFID beepOnRead set to $value');
@@ -89,16 +93,27 @@ class RfidServiceReal {
   Future<bool> connectToSerialReader(String portName) async {
     try {
       _updateStatus(RfidReaderStatus.connecting);
-
-      // In a real implementation, you would:
-      // 1. Use a serial communication plugin
-      // 2. Open the serial port
-      // 3. Configure baud rate, parity, etc.
-      // 4. Listen for data
-
-      // For now, we'll simulate a successful connection
-      await Future.delayed(const Duration(seconds: 2));
-
+      if (!SerialPort.availablePorts.contains(portName)) {
+        throw Exception('Serial port not found: $portName');
+      }
+      _serialPort?.close();
+      _serialSubscription?.cancel();
+      _serialPort = SerialPort(portName);
+      final opened = _serialPort!.openReadWrite();
+      if (!opened) {
+        throw Exception('Failed to open serial port: $portName');
+      }
+      _serialPort!.config = SerialPortConfig()
+        ..baudRate = 115200
+        ..bits = 8
+        ..stopBits = 1
+        ..parity = SerialPortParity.none;
+      _serialReader = SerialPortReader(_serialPort!);
+      _serialSubscription = _serialReader!.stream.listen(
+        (data) => _handleRfidData(data),
+        onError: (e) => debugPrint('Serial read error: $e'),
+        cancelOnError: false,
+      );
       _updateStatus(RfidReaderStatus.connected);
       return true;
     } catch (e) {
@@ -112,14 +127,108 @@ class RfidServiceReal {
   Future<bool> connectToBluetoothReader(String deviceId) async {
     try {
       _updateStatus(RfidReaderStatus.connecting);
+      // Ensure adapter on
+      if (await FlutterBluePlus.adapterState.first !=
+          BluetoothAdapterState.on) {
+        // Try to turn on (Android only); on Windows, surface error
+        try {
+          await FlutterBluePlus.turnOn();
+        } catch (_) {}
+        if (await FlutterBluePlus.adapterState.first !=
+            BluetoothAdapterState.on) {
+          throw Exception('Bluetooth adapter is off');
+        }
+      }
 
-      // In a real implementation, you would:
-      // 1. Use a Bluetooth plugin
-      // 2. Scan for and connect to the Bluetooth device
-      // 3. Establish a data stream for communication
+      // Scan briefly to find device by id/name
+      BluetoothDevice? found;
+      final scanSub = FlutterBluePlus.onScanResults.listen((results) {
+        for (final r in results) {
+          final d = r.device;
+          if (d.remoteId.str == deviceId || (d.platformName == deviceId)) {
+            found = d;
+          }
+        }
+      });
+      await FlutterBluePlus.startScan(timeout: const Duration(seconds: 6));
+      await FlutterBluePlus.stopScan();
+      await scanSub.cancel();
+      if (found == null) {
+        final connected = FlutterBluePlus.connectedDevices;
+        final matches = connected
+            .where(
+              (d) => d.remoteId.str == deviceId || d.platformName == deviceId,
+            )
+            .toList();
+        if (matches.isNotEmpty) {
+          found = matches.first;
+        }
+      }
+      if (found == null) {
+        final bonded = await FlutterBluePlus.bondedDevices;
+        final matches = bonded
+            .where(
+              (d) => d.remoteId.str == deviceId || d.platformName == deviceId,
+            )
+            .toList();
+        if (matches.isNotEmpty) {
+          found = matches.first;
+        }
+      }
+      if (found == null) {
+        throw Exception('BLE device not found: $deviceId');
+      }
 
-      // For now, we'll simulate a successful connection
-      await Future.delayed(const Duration(seconds: 2));
+      _bleDevice = found;
+      await _bleDevice!.connect(timeout: const Duration(seconds: 10));
+      final services = await _bleDevice!.discoverServices();
+
+      // Heuristics: try Nordic UART (NUS) first, else any notify/write characteristic
+      Guid uartService = Guid('6e400001-b5a3-f393-e0a9-e50e24dcca9e');
+      Guid rxChar = Guid('6e400003-b5a3-f393-e0a9-e50e24dcca9e'); // notify
+      Guid txChar = Guid('6e400002-b5a3-f393-e0a9-e50e24dcca9e'); // write
+
+      for (final s in services) {
+        if (s.uuid == uartService) {
+          for (final c in s.characteristics) {
+            if (c.uuid == rxChar) _bleRx = c;
+            if (c.uuid == txChar) _bleTx = c;
+          }
+        }
+      }
+      // fallback: first notify + first write
+      if (_bleRx == null) {
+        for (final s in services) {
+          for (final c in s.characteristics) {
+            if (c.properties.notify) {
+              _bleRx = c;
+              break;
+            }
+          }
+          if (_bleRx != null) break;
+        }
+      }
+      if (_bleTx == null) {
+        for (final s in services) {
+          for (final c in s.characteristics) {
+            if (c.properties.write || c.properties.writeWithoutResponse) {
+              _bleTx = c;
+              break;
+            }
+          }
+          if (_bleTx != null) break;
+        }
+      }
+
+      if (_bleRx == null || _bleTx == null) {
+        throw Exception('Suitable BLE characteristics not found');
+      }
+
+      await _bleRx!.setNotifyValue(true);
+      await _bleNotifySub?.cancel();
+      _bleNotifySub = _bleRx!.onValueReceived.listen((data) {
+        _handleRfidData(data);
+      }, onError: (e) => debugPrint('BLE notify error: $e'));
 
       _updateStatus(RfidReaderStatus.connected);
       return true;
@@ -132,20 +241,15 @@ class RfidServiceReal {
 
   /// Starts scanning for RFID tags
   Future<bool> startScanning() async {
-    // محاكاة الاتصال للاختبار
-    if (_currentStatus == RfidReaderStatus.disconnected) {
-      _updateStatus(RfidReaderStatus.connected);
-    }
-
     try {
+      if (_currentStatus != RfidReaderStatus.connected) {
+        throw StateError('RFID reader is not connected');
+      }
       _updateStatus(RfidReaderStatus.scanning);
 
       // Send command to start scanning
       // The actual command depends on the RFID reader model
       _sendCommand(_commandBuilder.buildStartScan(), log: 'بدء المسح');
-
-      // محاكاة إرسال بطاقات RFID للاختبار
-      _startTestRfidSimulation();
 
       return true;
     } catch (e) {
@@ -153,11 +257,6 @@ class RfidServiceReal {
       _updateStatus(RfidReaderStatus.error);
       return false;
     }
-  }
-
-  void _startTestRfidSimulation() {
-    // لا توجد محاكاة - فقط قراءة حقيقية
-    debugPrint('📡 RFID جاهز لقراءة البطاقات الحقيقية');
   }
 
   /// Stops scanning for RFID tags
@@ -268,14 +367,30 @@ class RfidServiceReal {
         } else {
           _tagStreamController.add(tagId);
           if (_beepOnRead) {
+            // لا نرن إلا إذا كانت البطاقة مسجلة في المنظومة
             // ignore: discarded_futures
-            playBeep();
+            _maybeBeepForRegistered(tagId);
           }
         }
       }
     } catch (e) {
       debugPrint("Error handling RFID data: $e");
       _updateStatus(RfidReaderStatus.error);
+    }
+  }
+
+  /// يشغّل صوت التنبيه فقط إذا كانت البطاقة مرتبطة بصنف مسجّل
+  Future<void> _maybeBeepForRegistered(String tagId) async {
+    try {
+      final repo = ItemRepository();
+      final item = await repo.getItemByRfidTag(tagId);
+      if (item != null) {
+        await playBeep();
+      } else {
+        debugPrint('🔇 تجاهُل الرنين لبطاقة غير مسجلة: $tagId');
+      }
+    } catch (e) {
+      debugPrint('⚠️ فشل التحقق من البطاقة قبل الرنين: $e');
     }
   }
 
@@ -496,6 +611,16 @@ class RfidServiceReal {
       if (_serialPort != null && _serialPort!.isOpen) {
         final bytes = utf8.encode(command);
         _serialPort!.write(Uint8List.fromList(bytes));
+      } else if (_bleTx != null) {
+        final bytes = Uint8List.fromList(utf8.encode(command));
+        // prefer writeWithoutResponse if available
+        if (_bleTx!.properties.writeWithoutResponse) {
+          // ignore: discarded_futures
+          _bleTx!.write(bytes, withoutResponse: true);
+        } else {
+          // ignore: discarded_futures
+          _bleTx!.write(bytes, withoutResponse: false);
+        }
       } else {
         _rfidSocket?.write(command);
       }
@@ -526,8 +651,9 @@ class RfidServiceReal {
         _recentlyReadTags.remove(tagId);
       });
       if (_beepOnRead) {
+        // احترام قاعدة عدم الرنين للبطاقات غير المسجلة
         // ignore: discarded_futures
-        playBeep();
+        _maybeBeepForRegistered(tagId);
       }
     } else {
       debugPrint('⚠️ لا يمكن قراءة البطاقة - القارئ غير متصل');
@@ -552,6 +678,8 @@ class RfidServiceReal {
     if (_serialPort?.isOpen == true) {
       _serialPort?.close();
     }
+    _bleNotifySub?.cancel();
+    _bleDevice?.disconnect();
     _scanningTimer?.cancel();
     _tagCooldownTimer?.cancel();
     _rfidSocket?.close();

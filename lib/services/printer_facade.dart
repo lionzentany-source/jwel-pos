@@ -93,50 +93,22 @@ class PrinterFacade {
           success = true;
           break;
         case InvoicePrintMode.pdfSystem:
-          final printer = await _systemPrinterService.getDefaultPrinter();
+          // استخدم الطابعة المفضلة المخزنة إن وُجدت وإلا فالافتراضية من النظام
+          final preferredName = await _settingsRepository
+              .getDefaultPrinterName();
+          final printer =
+              preferredName != null && preferredName.trim().isNotEmpty
+              ? await _systemPrinterService.getPrinterByName(preferredName)
+              : await _systemPrinterService.getDefaultPrinter();
           if (printer == null) throw Exception('لا توجد طابعة نظام متاحة');
-          success = await _systemPrinterService.printInvoice(printer, {
-            'storeName': data.storeName,
-            'invoiceNumber': data.invoiceNumber,
-            'items': data.items
-                .map(
-                  (ci) => {
-                    'name': ci.item.sku,
-                    'quantity': ci.quantity,
-                    'price': ci.unitPrice,
-                    'total': ci.totalPrice,
-                  },
-                )
-                .toList(),
-            'subtotal': data.subtotal,
-            'tax': data.tax,
-            'total': data.total,
-          });
+          success = await _systemPrinterService.printInvoice(printer, data);
           break;
         case InvoicePrintMode.enhanced:
           final selected = _enhancedPrinterService.selectedPrinter;
           if (selected == null) {
             throw Exception('لم يتم اختيار طابعة محسّنة');
           }
-          success = await _enhancedPrinterService.printInvoice(selected, {
-            'storeName': data.storeName,
-            'invoiceNumber': data.invoiceNumber,
-            'items': data.items
-                .map(
-                  (ci) => {
-                    'name': ci.item.sku,
-                    'quantity': ci.quantity,
-                    'price': ci.unitPrice,
-                    'total': ci.totalPrice,
-                  },
-                )
-                .toList(),
-            'subtotal': data.subtotal,
-            'discount': data.discount,
-            'tax': data.tax,
-            'total': data.total,
-            'paymentMethod': data.paymentMethod,
-          });
+          success = await _enhancedPrinterService.printInvoice(selected, data);
           break;
       }
       await _logActivity(

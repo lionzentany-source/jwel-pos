@@ -1,4 +1,5 @@
 import 'package:flutter/cupertino.dart';
+import 'package:fluent_ui/fluent_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../widgets/adaptive_scaffold.dart';
@@ -16,7 +17,6 @@ class ManageCategoriesScreen extends ConsumerStatefulWidget {
 
 class _ManageCategoriesScreenState
     extends ConsumerState<ManageCategoriesScreen> {
-
   final Map<String, IconData> _availableIcons = {
     'ring': CupertinoIcons.circle,
     'bracelet': CupertinoIcons.link,
@@ -31,26 +31,32 @@ class _ManageCategoriesScreenState
   Widget build(BuildContext context) {
     final categoriesAsync = ref.watch(categoryNotifierProvider);
 
-    return AdaptiveScaffold(
-      title: 'إدارة الفئات',
-      actions: [
-        CupertinoButton(
-          padding: EdgeInsets.zero,
-          onPressed: () => _showAddCategoryDialog(),
-          child: const Icon(CupertinoIcons.add),
-        ),
-      ],
-      body: GestureDetector(
-        onTap: () {
-          FocusScope.of(context).unfocus();
-        },
-        child: categoriesAsync.when(
-          data: (categories) => _buildCategoriesList(categories),
-          loading: () => const Center(child: CupertinoActivityIndicator()),
-          error: (error, stack) => AppLoadingErrorWidget(
-            title: 'خطأ في تحميل الفئات',
-            message: error.toString(),
-            onRetry: () => ref.refresh(categoryNotifierProvider),
+    return Container(
+      color: Color(0xfff6f8fa), // خلفية موحدة
+      child: AdaptiveScaffold(
+        title: 'إدارة الفئات',
+        commandBarItems: [
+          CommandBarButton(
+            icon: const Icon(FluentIcons.add, size: 20),
+            label: const Text(
+              'إضافة',
+              style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+            ),
+            onPressed: () => _showAddCategoryDialog(),
+          ),
+        ],
+        body: GestureDetector(
+          onTap: () {
+            FocusScope.of(context).unfocus();
+          },
+          child: categoriesAsync.when(
+            data: (categories) => _buildCategoriesList(categories),
+            loading: () => const Center(child: ProgressRing()),
+            error: (error, stack) => AppLoadingErrorWidget(
+              title: 'خطأ في تحميل الفئات',
+              message: error.toString(),
+              onRetry: () => ref.refresh(categoryNotifierProvider),
+            ),
           ),
         ),
       ),
@@ -63,21 +69,18 @@ class _ManageCategoriesScreenState
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            const Icon(
-              CupertinoIcons.tag,
+            Icon(
+              FluentIcons.tag,
               size: 80,
-              color: CupertinoColors.systemGrey3,
+              color: FluentTheme.of(context).inactiveColor,
             ),
             const SizedBox(height: 16),
-            const Text(
+            Text(
               'لا توجد فئات',
-              style: TextStyle(
-                fontSize: 18,
-                color: CupertinoColors.secondaryLabel,
-              ),
+              style: FluentTheme.of(context).typography.subtitle,
             ),
             const SizedBox(height: 24),
-            CupertinoButton.filled(
+            FilledButton(
               onPressed: () => _showAddCategoryDialog(),
               child: const Text('إضافة فئة جديدة'),
             ),
@@ -97,20 +100,8 @@ class _ManageCategoriesScreenState
   }
 
   Widget _buildCategoryCard(Category category) {
-    return Container(
-      margin: const EdgeInsets.only(bottom: 12),
+    return Card(
       padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: CupertinoColors.systemBackground,
-        borderRadius: BorderRadius.circular(12),
-        boxShadow: [
-          BoxShadow(
-            color: CupertinoColors.systemGrey.withValues(alpha: 0.1),
-            blurRadius: 8,
-            offset: const Offset(0, 2),
-          ),
-        ],
-      ),
       child: Row(
         children: [
           Container(
@@ -140,28 +131,29 @@ class _ManageCategoriesScreenState
                 const SizedBox(height: 4),
                 Text(
                   'أيقونة: ${category.iconName}',
-                  style: const TextStyle(
-                    fontSize: 12,
-                    color: CupertinoColors.secondaryLabel,
-                  ),
+                  style: const TextStyle(fontSize: 12, color: Colors.grey),
                 ),
               ],
             ),
           ),
-          CupertinoButton(
-            padding: EdgeInsets.zero,
-            onPressed: () => _showEditCategoryDialog(category),
-            child: const Icon(
-              CupertinoIcons.pencil,
-              color: CupertinoColors.activeBlue,
+          // أيقونة تعديل فقط
+          GestureDetector(
+            onTap: () => _showEditCategoryDialog(category),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 8.0),
+              child: Icon(
+                FluentIcons.edit,
+                color: FluentTheme.of(context).accentColor,
+                size: 24,
+              ),
             ),
           ),
-          CupertinoButton(
-            padding: EdgeInsets.zero,
-            onPressed: () => _showDeleteConfirmation(category),
-            child: const Icon(
-              CupertinoIcons.trash,
-              color: CupertinoColors.systemRed,
+          // أيقونة حذف فقط
+          GestureDetector(
+            onTap: () => _showDeleteConfirmation(category),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 8.0),
+              child: Icon(FluentIcons.delete, color: Colors.red, size: 24),
             ),
           ),
         ],
@@ -170,7 +162,7 @@ class _ManageCategoriesScreenState
   }
 
   IconData _getIconFromName(String iconName) {
-    return _availableIcons[iconName] ?? CupertinoIcons.tag;
+    return _availableIcons[iconName] ?? FluentIcons.tag;
   }
 
   void _showAddCategoryDialog() {
@@ -202,7 +194,10 @@ class _ManageCategoriesScreenState
                   ),
                   const SizedBox(height: 12),
                   CupertinoButton(
-                    onPressed: () => _showIconPicker(setState, (newIcon) => selectedIconName = newIcon),
+                    onPressed: () => _showIconPicker(
+                      setState,
+                      (newIcon) => selectedIconName = newIcon,
+                    ),
                     child: Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
@@ -230,12 +225,20 @@ class _ManageCategoriesScreenState
                         );
 
                         if (isEditMode) {
-                          await ref.read(categoryNotifierProvider.notifier).updateCategory(newCategory);
+                          await ref
+                              .read(categoryNotifierProvider.notifier)
+                              .updateCategory(newCategory);
                         } else {
-                          await ref.read(categoryNotifierProvider.notifier).addCategory(newCategory);
+                          await ref
+                              .read(categoryNotifierProvider.notifier)
+                              .addCategory(newCategory);
                         }
                         navigator.pop();
-                        _showSuccessMessage(isEditMode ? 'تم تحديث الفئة بنجاح' : 'تم إضافة الفئة بنجاح');
+                        _showSuccessMessage(
+                          isEditMode
+                              ? 'تم تحديث الفئة بنجاح'
+                              : 'تم إضافة الفئة بنجاح',
+                        );
                       } catch (error) {
                         _showErrorMessage('خطأ: $error');
                       }
@@ -263,7 +266,9 @@ class _ManageCategoriesScreenState
             Container(
               height: 50,
               decoration: const BoxDecoration(
-                border: Border(bottom: BorderSide(color: CupertinoColors.separator)),
+                border: Border(
+                  bottom: BorderSide(color: CupertinoColors.separator),
+                ),
               ),
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -272,7 +277,10 @@ class _ManageCategoriesScreenState
                     child: const Text('إلغاء'),
                     onPressed: () => Navigator.pop(context),
                   ),
-                  const Text('اختر أيقونة', style: TextStyle(fontWeight: FontWeight.w600)),
+                  const Text(
+                    'اختر أيقونة',
+                    style: TextStyle(fontWeight: FontWeight.w600),
+                  ),
                   CupertinoButton(
                     child: const Text('تم'),
                     onPressed: () {
@@ -289,9 +297,20 @@ class _ManageCategoriesScreenState
                 onSelectedItemChanged: (index) {
                   tempIcon = _availableIcons.keys.elementAt(index);
                 },
-                children: _availableIcons.keys.map((iconName) => 
-                  Center(child: Row(mainAxisSize: MainAxisSize.min, children: [Icon(_getIconFromName(iconName)), const SizedBox(width: 8), Text(iconName)])) 
-                ).toList(),
+                children: _availableIcons.keys
+                    .map(
+                      (iconName) => Center(
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(_getIconFromName(iconName)),
+                            const SizedBox(width: 8),
+                            Text(iconName),
+                          ],
+                        ),
+                      ),
+                    )
+                    .toList(),
               ),
             ),
           ],

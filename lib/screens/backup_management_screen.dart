@@ -1,5 +1,6 @@
-import 'package:flutter/cupertino.dart';
+import 'package:fluent_ui/fluent_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../theme/app_brand_theme.dart';
 import '../widgets/adaptive_scaffold.dart';
 import '../services/advanced_backup_service.dart';
 
@@ -7,10 +8,12 @@ class BackupManagementScreen extends ConsumerStatefulWidget {
   const BackupManagementScreen({super.key});
 
   @override
-  ConsumerState<BackupManagementScreen> createState() => _BackupManagementScreenState();
+  ConsumerState<BackupManagementScreen> createState() =>
+      _BackupManagementScreenState();
 }
 
-class _BackupManagementScreenState extends ConsumerState<BackupManagementScreen> {
+class _BackupManagementScreenState
+    extends ConsumerState<BackupManagementScreen> {
   final AdvancedBackupService _backupService = AdvancedBackupService();
   List<BackupInfo> _backups = [];
   bool _isLoading = false;
@@ -46,56 +49,59 @@ class _BackupManagementScreenState extends ConsumerState<BackupManagementScreen>
 
   @override
   Widget build(BuildContext context) {
-    return AdaptiveScaffold(
-      title: 'إدارة النسخ الاحتياطي',
-      body: _isLoading
-          ? const Center(child: CupertinoActivityIndicator())
-          : SingleChildScrollView(
-              child: Column(
-                children: [
-                  _buildAutoBackupSettings(),
-                  const SizedBox(height: 16),
-                  _buildQuickActions(),
-                  const SizedBox(height: 16),
-                  _buildBackupsList(),
-                ],
+    return Container(
+      color: Color(0xfff6f8fa), // خلفية موحدة
+      child: AdaptiveScaffold(
+        title: 'إدارة النسخ الاحتياطي',
+        body: _isLoading
+            ? const Center(child: ProgressRing())
+            : SingleChildScrollView(
+                child: Column(
+                  children: [
+                    _buildAutoBackupSettings(),
+                    const SizedBox(height: 16),
+                    _buildQuickActions(),
+                    const SizedBox(height: 16),
+                    _buildBackupsList(),
+                  ],
+                ),
               ),
-            ),
+      ),
     );
   }
 
   Widget _buildAutoBackupSettings() {
-    return Container(
+    return Card(
       margin: const EdgeInsets.all(16),
       padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: CupertinoColors.systemBackground,
-        borderRadius: BorderRadius.circular(12),
-        boxShadow: [
-          BoxShadow(
-            color: CupertinoColors.systemGrey.withValues(alpha: 0.1),
-            blurRadius: 8,
-            offset: const Offset(0, 2),
-          ),
-        ],
-      ),
+      backgroundColor: Color(0xffffffff),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           const Text(
             'النسخ الاحتياطي التلقائي',
-            style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
+            style: TextStyle(
+              fontSize: 18,
+              fontWeight: FontWeight.w600,
+              color: Color(0xff222b45),
+            ),
           ),
           const SizedBox(height: 16),
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              const Text('نسخ احتياطي يومي'),
-              CupertinoSwitch(
-                value: _autoBackupDaily,
+              const Text(
+                'نسخ احتياطي يومي',
+                style: TextStyle(color: Color(0xff222b45)),
+              ),
+              ToggleSwitch(
+                checked: _autoBackupDaily,
                 onChanged: (value) {
                   setState(() => _autoBackupDaily = value);
-                  _backupService.scheduleAutoBackup(daily: value, weekly: _autoBackupWeekly);
+                  _backupService.scheduleAutoBackup(
+                    daily: value,
+                    weekly: _autoBackupWeekly,
+                  );
                 },
               ),
             ],
@@ -104,12 +110,18 @@ class _BackupManagementScreenState extends ConsumerState<BackupManagementScreen>
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              const Text('نسخ احتياطي أسبوعي'),
-              CupertinoSwitch(
-                value: _autoBackupWeekly,
+              const Text(
+                'نسخ احتياطي أسبوعي',
+                style: TextStyle(color: Color(0xff222b45)),
+              ),
+              ToggleSwitch(
+                checked: _autoBackupWeekly,
                 onChanged: (value) {
                   setState(() => _autoBackupWeekly = value);
-                  _backupService.scheduleAutoBackup(daily: _autoBackupDaily, weekly: value);
+                  _backupService.scheduleAutoBackup(
+                    daily: _autoBackupDaily,
+                    weekly: value,
+                  );
                 },
               ),
             ],
@@ -125,17 +137,34 @@ class _BackupManagementScreenState extends ConsumerState<BackupManagementScreen>
       child: Row(
         children: [
           Expanded(
-            child: CupertinoButton.filled(
-              onPressed: _createBackup,
-              child: const Text('إنشاء نسخة احتياطية'),
+            child: Builder(
+              builder: (context) {
+                final t = AppBrandTheme.of(context);
+                return SizedBox(
+                  height: 48,
+                  child: FilledButton(
+                    onPressed: _createBackup,
+                    style: t.primaryFilledButtonStyle(),
+                    child: const Text('إنشاء نسخة احتياطية'),
+                  ),
+                );
+              },
             ),
           ),
           const SizedBox(width: 12),
           Expanded(
-            child: CupertinoButton(
-              color: CupertinoColors.systemGrey,
-              onPressed: _cleanupOldBackups,
-              child: const Text('تنظيف النسخ القديمة'),
+            child: Builder(
+              builder: (context) {
+                final t = AppBrandTheme.of(context);
+                return SizedBox(
+                  height: 48,
+                  child: FilledButton(
+                    onPressed: _cleanupOldBackups,
+                    style: t.primaryFilledButtonStyle(),
+                    child: const Text('تنظيف النسخ القديمة'),
+                  ),
+                );
+              },
             ),
           ),
         ],
@@ -144,33 +173,27 @@ class _BackupManagementScreenState extends ConsumerState<BackupManagementScreen>
   }
 
   Widget _buildBackupsList() {
-    return Container(
+    return Card(
       margin: const EdgeInsets.all(16),
       padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: CupertinoColors.systemBackground,
-        borderRadius: BorderRadius.circular(12),
-        boxShadow: [
-          BoxShadow(
-            color: CupertinoColors.systemGrey.withValues(alpha: 0.1),
-            blurRadius: 8,
-            offset: const Offset(0, 2),
-          ),
-        ],
-      ),
+      backgroundColor: Color(0xffffffff),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
             'النسخ الاحتياطية المتاحة (${_backups.length})',
-            style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
+            style: const TextStyle(
+              fontSize: 18,
+              fontWeight: FontWeight.w600,
+              color: Color(0xff222b45),
+            ),
           ),
           const SizedBox(height: 16),
           if (_backups.isEmpty)
-            const Center(
+            Center(
               child: Text(
                 'لا توجد نسخ احتياطية',
-                style: TextStyle(color: CupertinoColors.secondaryLabel),
+                style: TextStyle(color: Color(0xff222b45)),
               ),
             )
           else
@@ -181,16 +204,13 @@ class _BackupManagementScreenState extends ConsumerState<BackupManagementScreen>
   }
 
   Widget _buildBackupItem(BackupInfo backup) {
-    return Container(
+    return Card(
       margin: const EdgeInsets.only(bottom: 12),
       padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: CupertinoColors.systemGrey6,
-        borderRadius: BorderRadius.circular(8),
-      ),
+      backgroundColor: Color(0xffffffff),
       child: Row(
         children: [
-          const Icon(CupertinoIcons.archivebox, color: CupertinoColors.activeBlue),
+          Icon(FluentIcons.archive, color: Color(0xff0078d4)),
           const SizedBox(width: 12),
           Expanded(
             child: Column(
@@ -198,23 +218,31 @@ class _BackupManagementScreenState extends ConsumerState<BackupManagementScreen>
               children: [
                 Text(
                   backup.fileName,
-                  style: const TextStyle(fontWeight: FontWeight.w600),
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w600,
+                    color: Color(0xff222b45),
+                  ),
                 ),
                 const SizedBox(height: 4),
                 Text(
                   '${backup.formattedDate} • ${backup.formattedSize} • ${backup.totalRecords} سجل',
-                  style: const TextStyle(
-                    fontSize: 12,
-                    color: CupertinoColors.secondaryLabel,
-                  ),
+                  style: TextStyle(color: Color(0xff222b45)),
                 ),
               ],
             ),
           ),
-          CupertinoButton(
-            padding: EdgeInsets.zero,
-            onPressed: () => _showBackupOptions(backup),
-            child: const Icon(CupertinoIcons.ellipsis),
+          Builder(
+            builder: (context) {
+              final t = AppBrandTheme.of(context);
+              return SizedBox(
+                height: 44,
+                child: FilledButton(
+                  onPressed: () => _showBackupOptions(backup),
+                  style: t.primaryFilledButtonStyle(),
+                  child: const Icon(FluentIcons.more, color: Color(0xffffffff)),
+                ),
+              );
+            },
           ),
         ],
       ),
@@ -222,31 +250,31 @@ class _BackupManagementScreenState extends ConsumerState<BackupManagementScreen>
   }
 
   void _showBackupOptions(BackupInfo backup) {
-    showCupertinoModalPopup(
+    showDialog(
       context: context,
-      builder: (context) => CupertinoActionSheet(
+      builder: (context) => ContentDialog(
         title: Text(backup.fileName),
+        content: const Text('اختر إجراءً:'),
         actions: [
-          CupertinoActionSheetAction(
+          Button(
             child: const Text('استعادة البيانات'),
             onPressed: () {
               Navigator.pop(context);
               _confirmRestore(backup);
             },
           ),
-          CupertinoActionSheetAction(
-            isDestructiveAction: true,
+          FilledButton(
             child: const Text('حذف النسخة الاحتياطية'),
             onPressed: () {
               Navigator.pop(context);
               _confirmDelete(backup);
             },
           ),
+          Button(
+            child: const Text('إلغاء'),
+            onPressed: () => Navigator.pop(context),
+          ),
         ],
-        cancelButton: CupertinoActionSheetAction(
-          child: const Text('إلغاء'),
-          onPressed: () => Navigator.pop(context),
-        ),
       ),
     );
   }
@@ -265,23 +293,24 @@ class _BackupManagementScreenState extends ConsumerState<BackupManagementScreen>
   }
 
   void _confirmRestore(BackupInfo backup) {
-    showCupertinoDialog(
+    showDialog(
       context: context,
-      builder: (context) => CupertinoAlertDialog(
+      builder: (context) => ContentDialog(
         title: const Text('تأكيد الاستعادة'),
-        content: Text('هل أنت متأكد من استعادة البيانات من ${backup.fileName}؟\n\nسيتم حذف جميع البيانات الحالية!'),
+        content: Text(
+          'هل أنت متأكد من استعادة البيانات من ${backup.fileName}؟\n\nسيتم حذف جميع البيانات الحالية!',
+        ),
         actions: [
-          CupertinoDialogAction(
-            child: const Text('إلغاء'),
+          Button(
             onPressed: () => Navigator.pop(context),
+            child: const Text('إلغاء'),
           ),
-          CupertinoDialogAction(
-            isDestructiveAction: true,
-            child: const Text('استعادة'),
+          FilledButton(
             onPressed: () {
               Navigator.pop(context);
               _restoreBackup(backup);
             },
+            child: const Text('استعادة'),
           ),
         ],
       ),
@@ -289,23 +318,22 @@ class _BackupManagementScreenState extends ConsumerState<BackupManagementScreen>
   }
 
   void _confirmDelete(BackupInfo backup) {
-    showCupertinoDialog(
+    showDialog(
       context: context,
-      builder: (context) => CupertinoAlertDialog(
+      builder: (context) => ContentDialog(
         title: const Text('تأكيد الحذف'),
         content: Text('هل أنت متأكد من حذف ${backup.fileName}؟'),
         actions: [
-          CupertinoDialogAction(
-            child: const Text('إلغاء'),
+          Button(
             onPressed: () => Navigator.pop(context),
+            child: const Text('إلغاء'),
           ),
-          CupertinoDialogAction(
-            isDestructiveAction: true,
-            child: const Text('حذف'),
+          FilledButton(
             onPressed: () {
               Navigator.pop(context);
               _deleteBackup(backup);
             },
+            child: const Text('حذف'),
           ),
         ],
       ),
@@ -345,15 +373,15 @@ class _BackupManagementScreenState extends ConsumerState<BackupManagementScreen>
   }
 
   void _showSuccess(String message) {
-    showCupertinoDialog(
+    showDialog(
       context: context,
-      builder: (context) => CupertinoAlertDialog(
-        title: const Text('تم بنجاح'),
+      builder: (context) => ContentDialog(
+        title: const Text('نجاح'),
         content: Text(message),
         actions: [
-          CupertinoDialogAction(
-            child: const Text('موافق'),
+          FilledButton(
             onPressed: () => Navigator.pop(context),
+            child: const Text('موافق'),
           ),
         ],
       ),
@@ -361,15 +389,15 @@ class _BackupManagementScreenState extends ConsumerState<BackupManagementScreen>
   }
 
   void _showError(String message) {
-    showCupertinoDialog(
+    showDialog(
       context: context,
-      builder: (context) => CupertinoAlertDialog(
+      builder: (context) => ContentDialog(
         title: const Text('خطأ'),
         content: Text(message),
         actions: [
-          CupertinoDialogAction(
-            child: const Text('موافق'),
+          FilledButton(
             onPressed: () => Navigator.pop(context),
+            child: const Text('موافق'),
           ),
         ],
       ),

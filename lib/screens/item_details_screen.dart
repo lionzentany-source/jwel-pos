@@ -1,4 +1,5 @@
 import 'package:flutter/cupertino.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'dart:io';
 
@@ -10,6 +11,8 @@ import '../providers/material_provider.dart';
 import '../providers/settings_provider.dart';
 import 'link_rfid_screen.dart';
 import 'edit_item_screen.dart';
+import '../widgets/side_sheet.dart';
+import '../widgets/app_button.dart';
 
 class ItemDetailsScreen extends ConsumerStatefulWidget {
   final int itemId;
@@ -24,74 +27,58 @@ class _ItemDetailsScreenState extends ConsumerState<ItemDetailsScreen> {
   @override
   Widget build(BuildContext context) {
     final itemAsync = ref.watch(itemByIdProvider(widget.itemId));
-    final goldPriceAsync = ref.watch(goldPriceProvider);
+    final goldPrice = ref.watch(goldPriceProvider);
 
     return itemAsync.when(
       data: (item) {
         if (item == null) {
-          return AdaptiveScaffold(
-            title: 'تفاصيل الصنف',
-            body: const Center(child: Text('الصنف غير موجود')),
+          return Container(
+            color: Color(0xfff6f8fa),
+            child: AdaptiveScaffold(
+              title: 'تفاصيل الصنف',
+              body: const Center(child: Text('الصنف غير موجود')),
+            ),
           );
         }
-
-        return AdaptiveScaffold(
-          title: 'تفاصيل الصنف',
-          actions: [
-            CupertinoButton(
-              padding: EdgeInsets.zero,
-              onPressed: () => _showOptionsMenu(context, item),
-              child: const Icon(CupertinoIcons.ellipsis),
-            ),
-          ],
-          body: SingleChildScrollView(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                // صورة المنتج
-                _buildImageSection(item),
-
-                const SizedBox(height: 20),
-
-                // معلومات أساسية
-                _buildInfoCard('معلومات أساسية', [
-                  _buildInfoRow('رقم الصنف', item.sku),
-                  _buildInfoRow('الوزن', '${item.weightGrams} جرام'),
-                  _buildInfoRow('العيار', '${item.karat} قيراط'),
-                  _buildInfoRow('المصنعية', '${item.workmanshipFee} د.ل'),
-                  if (item.stonePrice > 0)
-                    _buildInfoRow('سعر الأحجار', '${item.stonePrice} د.ل'),
-                ]),
-
-                const SizedBox(height: 16),
-
-                // معلومات الفئة والمادة
-                _buildCategoryMaterialInfo(ref, item),
-
-                const SizedBox(height: 16),
-
-                // السعر
-                goldPriceAsync.when(
-                  data: (goldPrice) => _buildPriceCard(item, goldPrice),
-                  loading: () => const CupertinoActivityIndicator(),
-                  error: (error, stack) => _buildInfoCard('السعر', [
-                    _buildInfoRow('خطأ', 'لا يمكن حساب السعر'),
+        return Container(
+          color: Color(0xfff6f8fa),
+          child: AdaptiveScaffold(
+            title: 'تفاصيل الصنف',
+            actions: [
+              CupertinoButton(
+                padding: EdgeInsets.zero,
+                onPressed: () => _showOptionsMenu(context, item),
+                child: const Icon(CupertinoIcons.ellipsis),
+              ),
+            ],
+            body: SingleChildScrollView(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  _buildImageSection(item),
+                  const SizedBox(height: 20),
+                  _buildInfoCard('معلومات أساسية', [
+                    _buildInfoRow('رقم الصنف', item.sku),
+                    _buildInfoRow('الوزن', '${item.weightGrams} جرام'),
+                    _buildInfoRow('العيار', '${item.karat} قيراط'),
+                    _buildInfoRow('المصنعية', '${item.workmanshipFee} د.ل'),
+                    _buildInfoRow('المكان', item.location.displayName),
+                    if (item.stonePrice > 0)
+                      _buildInfoRow('سعر الأحجار', '${item.stonePrice} د.ل'),
                   ]),
-                ),
-
-                const SizedBox(height: 16),
-
-                // حالة RFID
-                _buildRfidStatusCard(context, ref, item),
-
-                const SizedBox(height: 16),
-
-                // معلومات إضافية
-                _buildInfoCard('معلومات إضافية', [
-                  _buildInfoRow('الحالة', item.status.displayName),
-                  _buildInfoRow('تاريخ الإضافة', _formatDate(item.createdAt)),
-                ]),
-              ],
+                  const SizedBox(height: 16),
+                  _buildCategoryMaterialInfo(ref, item),
+                  const SizedBox(height: 16),
+                  _buildPriceCard(item, goldPrice),
+                  const SizedBox(height: 16),
+                  _buildRfidStatusCard(context, ref, item),
+                  const SizedBox(height: 16),
+                  _buildInfoCard('معلومات إضافية', [
+                    _buildInfoRow('الحالة', item.status.displayName),
+                    _buildInfoRow('تاريخ الإضافة', _formatDate(item.createdAt)),
+                  ]),
+                ],
+              ),
             ),
           ),
         );
@@ -224,10 +211,9 @@ class _ItemDetailsScreenState extends ConsumerState<ItemDetailsScreen> {
   Widget _buildPriceCard(Item item, double goldPrice) {
     // الحصول على سعر المادة الخاص إن وجد
     double? materialPrice;
-    final materials = ref.watch(materialNotifierProvider).maybeWhen(
-          data: (list) => list,
-          orElse: () => null,
-        );
+    final materials = ref
+        .watch(materialNotifierProvider)
+        .maybeWhen(data: (list) => list, orElse: () => null);
     if (materials != null) {
       final mat = materials.firstWhere(
         (m) => m.id == item.materialId,
@@ -235,13 +221,20 @@ class _ItemDetailsScreenState extends ConsumerState<ItemDetailsScreen> {
       );
       if (mat.isVariable) materialPrice = mat.pricePerGram;
     }
-  final totalPrice = item.calculateTotalPrice(goldPrice, materialSpecificPrice: materialPrice);
-  final baseMaterialPrice = item.weightGrams * (materialPrice ?? goldPrice);
+    final totalPrice = item.calculateTotalPrice(
+      goldPrice,
+      materialSpecificPrice: materialPrice,
+    );
+    final baseMaterialPrice = item.weightGrams * (materialPrice ?? goldPrice);
 
     return _buildInfoCard('تفاصيل السعر', [
       _buildInfoRow(
         'سعر المادة الخام',
-  '${baseMaterialPrice.toStringAsFixed(2)} د.ل',
+        '${baseMaterialPrice.toStringAsFixed(2)} د.ل',
+      ),
+      _buildInfoRow(
+        'سعر التكلفة (ثابت)',
+        '${item.costPrice.toStringAsFixed(2)} د.ل',
       ),
       _buildInfoRow('المصنعية', '${item.workmanshipFee} د.ل'),
       if (item.stonePrice > 0)
@@ -330,18 +323,18 @@ class _ItemDetailsScreenState extends ConsumerState<ItemDetailsScreen> {
             const SizedBox(height: 16),
             SizedBox(
               width: double.infinity,
-              child: CupertinoButton.filled(
+              child: AppButton.primary(
+                text: 'ربط بطاقة RFID',
                 onPressed: () {
-                  Navigator.push(
+                  showSideSheet(
                     context,
-                    CupertinoPageRoute(
-                      builder: (context) => LinkRfidScreen(item: item),
-                    ),
+                    title: 'ربط بطاقة RFID',
+                    child: LinkRfidScreen(item: item),
+                    width: 560,
                   ).then((_) {
                     ref.invalidate(itemByIdProvider(widget.itemId));
                   });
                 },
-                child: const Text('ربط بطاقة RFID'),
               ),
             ),
           ],
@@ -355,45 +348,51 @@ class _ItemDetailsScreenState extends ConsumerState<ItemDetailsScreen> {
   }
 
   void _showOptionsMenu(BuildContext context, Item item) {
-    showCupertinoModalPopup(
+    showDialog(
       context: context,
-      builder: (context) => CupertinoActionSheet(
+      builder: (context) => AlertDialog(
+        backgroundColor: const Color(0xfff6f8fa),
         title: const Text('خيارات الصنف'),
-        actions: [
-          CupertinoActionSheetAction(
-            onPressed: () {
-              Navigator.pop(context);
-              Navigator.push(
-                context,
-                CupertinoPageRoute(
-                  builder: (context) => EditItemScreen(item: item),
-                ),
-              ).then((_) {
-                ref.invalidate(itemByIdProvider(widget.itemId));
-              });
-            },
-            child: const Text('تعديل'),
-          ),
-          if (item.status == ItemStatus.needsRfid)
-            CupertinoActionSheetAction(
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            AppButton.secondary(
+              text: 'تعديل',
               onPressed: () {
                 Navigator.pop(context);
-                Navigator.push(
+                showSideSheet(
                   context,
-                  CupertinoPageRoute(
-                    builder: (context) => LinkRfidScreen(item: item),
-                  ),
+                  title: 'تعديل الصنف',
+                  child: EditItemScreen(item: item),
+                  width: 560,
                 ).then((_) {
                   ref.invalidate(itemByIdProvider(widget.itemId));
                 });
               },
-              child: const Text('ربط بطاقة RFID'),
             ),
-        ],
-        cancelButton: CupertinoActionSheetAction(
-          onPressed: () => Navigator.pop(context),
-          child: const Text('إلغاء'),
+            if (item.status == ItemStatus.needsRfid)
+              AppButton.primary(
+                text: 'ربط بطاقة RFID',
+                onPressed: () {
+                  Navigator.pop(context);
+                  showSideSheet(
+                    context,
+                    title: 'ربط بطاقة RFID',
+                    child: LinkRfidScreen(item: item),
+                    width: 560,
+                  ).then((_) {
+                    ref.invalidate(itemByIdProvider(widget.itemId));
+                  });
+                },
+              ),
+          ],
         ),
+        actions: [
+          TextButton(
+            child: const Text('إلغاء'),
+            onPressed: () => Navigator.pop(context),
+          ),
+        ],
       ),
     );
   }

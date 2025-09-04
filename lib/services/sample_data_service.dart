@@ -14,13 +14,13 @@ class SampleDataService {
     CategoryRepository? categoryRepository,
     MaterialRepository? materialRepository,
   }) : _itemRepository = itemRepository ?? ItemRepository(),
-        _categoryRepository = categoryRepository ?? CategoryRepository(),
-        _materialRepository = materialRepository ?? MaterialRepository();
+       _categoryRepository = categoryRepository ?? CategoryRepository(),
+       _materialRepository = materialRepository ?? MaterialRepository();
 
   Future<void> addSampleItems() async {
     await _addSampleItemsInternal();
   }
-  
+
   Future<void> resetAndAddSampleItems() async {
     // حذف جميع الأصناف الموجودة
     final existingItems = await _itemRepository.getAllItems();
@@ -30,19 +30,19 @@ class SampleDataService {
       }
     }
     debugPrint('Deleted ${existingItems.length} existing items');
-    
+
     await _addSampleItemsInternal();
   }
-  
+
   Future<String> generateNextSku() async {
     final maps = await _itemRepository.query(orderBy: 'id DESC', limit: 1);
     if (maps.isEmpty) {
       return 'ITEM001';
     }
-    
+
     final allItems = await _itemRepository.query();
     int maxNumber = 0;
-    
+
     for (final map in allItems) {
       final sku = map['sku'] as String;
       if (sku.startsWith('ITEM')) {
@@ -53,7 +53,7 @@ class SampleDataService {
         }
       }
     }
-    
+
     final nextNumber = maxNumber + 1;
     return 'ITEM${nextNumber.toString().padLeft(3, '0')}';
   }
@@ -76,20 +76,37 @@ class SampleDataService {
       return; // لا يمكن إضافة أصناف بدون فئات ومواد
     }
 
-    final goldMaterial = materials.firstWhere((m) => m.nameAr == 'ذهب', orElse: () => materials.first);
-    final silverMaterial = materials.firstWhere((m) => m.nameAr == 'فضة', orElse: () => materials.first);
-    
-    final ringCategory = categories.firstWhere((c) => c.nameAr == 'خواتم', orElse: () => categories.first);
-    final braceletCategory = categories.firstWhere((c) => c.nameAr == 'أساور', orElse: () => categories.first);
-    final necklaceCategory = categories.firstWhere((c) => c.nameAr == 'قلائد', orElse: () => categories.first);
-    
-    debugPrint('Using categories: ${categories.map((c) => c.nameAr).join(', ')}');
+    final goldMaterial = materials.firstWhere(
+      (m) => m.nameAr == 'ذهب',
+      orElse: () => materials.first,
+    );
+    final silverMaterial = materials.firstWhere(
+      (m) => m.nameAr == 'فضة',
+      orElse: () => materials.first,
+    );
+
+    final ringCategory = categories.firstWhere(
+      (c) => c.nameAr == 'خواتم',
+      orElse: () => categories.first,
+    );
+    final braceletCategory = categories.firstWhere(
+      (c) => c.nameAr == 'أساور',
+      orElse: () => categories.first,
+    );
+    final necklaceCategory = categories.firstWhere(
+      (c) => c.nameAr == 'قلائد',
+      orElse: () => categories.first,
+    );
+
+    debugPrint(
+      'Using categories: ${categories.map((c) => c.nameAr).join(', ')}',
+    );
     debugPrint('Using materials: ${materials.map((m) => m.nameAr).join(', ')}');
 
     // توليد رقم SKU جديد
     final nextSku = await generateNextSku();
     final baseNumber = int.parse(nextSku.substring(4));
-    
+
     // إضافة أصناف تجريبية مع بطاقات RFID
     final sampleItems = [
       Item(
@@ -102,6 +119,7 @@ class SampleDataService {
         stonePrice: 25.0,
         rfidTag: '280689400004031001',
         status: ItemStatus.inStock,
+        location: ItemLocation.showroom,
       ),
       Item(
         sku: 'ITEM${(baseNumber + 1).toString().padLeft(3, '0')}',
@@ -112,6 +130,7 @@ class SampleDataService {
         workmanshipFee: 40.0,
         rfidTag: '280689400004031002',
         status: ItemStatus.inStock,
+        location: ItemLocation.warehouse,
       ),
       Item(
         sku: 'ITEM${(baseNumber + 2).toString().padLeft(3, '0')}',
@@ -123,6 +142,7 @@ class SampleDataService {
         stonePrice: 15.0,
         rfidTag: '280689400004031003',
         status: ItemStatus.inStock,
+        location: ItemLocation.showroom,
       ),
       Item(
         sku: 'ITEM${(baseNumber + 3).toString().padLeft(3, '0')}',
@@ -132,6 +152,7 @@ class SampleDataService {
         karat: 21,
         workmanshipFee: 120.0,
         status: ItemStatus.needsRfid,
+        location: ItemLocation.warehouse,
       ),
       Item(
         sku: 'ITEM${(baseNumber + 4).toString().padLeft(3, '0')}',
@@ -143,6 +164,7 @@ class SampleDataService {
         stonePrice: 10.0,
         rfidTag: '280689400004031005',
         status: ItemStatus.inStock,
+        location: ItemLocation.showroom,
       ),
     ];
 
@@ -151,9 +173,9 @@ class SampleDataService {
       final id = await _itemRepository.insertItem(item);
       debugPrint('Added item ${item.sku} with ID: $id');
     }
-    
+
     debugPrint('Sample items added successfully');
-    
+
     // التحقق من الإدراج
     final newItems = await _itemRepository.getAllItems();
     debugPrint('Total items after adding samples: ${newItems.length}');

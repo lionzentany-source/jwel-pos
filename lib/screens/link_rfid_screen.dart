@@ -1,11 +1,15 @@
 import 'package:flutter/cupertino.dart';
+import 'dart:async';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../widgets/app_button.dart';
 
 import '../widgets/adaptive_scaffold.dart';
 import '../models/item.dart';
 import '../providers/item_provider.dart';
-import '../services/rfid_service.dart'; // Import RfidReaderStatus
-import '../providers/rfid_provider.dart'; // Import rfidNotifierProvider and rfidTagProvider
+import '../services/rfid_service.dart'; // RfidReaderStatus, RfidServiceReal
+import '../providers/rfid_role_reader_provider.dart'; // role-based reader provider
+import '../services/rfid_session_coordinator.dart';
+import '../services/rfid_device_assignments.dart'; // RfidRole enum
 import '../utils/rfid_duplicate_filter.dart';
 
 class LinkRfidScreen extends ConsumerStatefulWidget {
@@ -22,6 +26,11 @@ class _LinkRfidScreenState extends ConsumerState<LinkRfidScreen>
   String? _scannedTag;
   late AnimationController _animationController;
   late Animation<double> _animation;
+  bool _rfidListenerAttached = false; // منع تعدد الإرفاقات
+  RfidServiceReal? _reader; // قارئ خاص لدور الكاشير
+  StreamSubscription<String>? _tagSub;
+  StreamSubscription<RfidReaderStatus>? _statusSub;
+  RfidReaderStatus _status = RfidReaderStatus.disconnected;
 
   @override
   void initState() {
@@ -34,107 +43,106 @@ class _LinkRfidScreenState extends ConsumerState<LinkRfidScreen>
       CurvedAnimation(parent: _animationController, curve: Curves.easeInOut),
     );
 
-    // Initialize RFID connection after the widget is built
+    // Initialize role-based RFID reader after build
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      _initializeRfidConnection();
+      _loadRoleReader();
     });
   }
 
-  Future<void> _initializeRfidConnection() async {
+  Future<void> _loadRoleReader() async {
     try {
-      // محاولة الاتصال بقارئ RFID
-      await ref
-          .read(rfidNotifierProvider.notifier)
-          .connect(port: 'COM3', baudRate: 115200, timeout: 5000);
+      final r = await ref.read(
+        rfidReaderForRoleProvider(RfidRole.cashier).future,
+      );
+      if (!mounted) return;
+      setState(() {
+        _reader = r;
+        _status = r.currentStatus;
+      });
+      _statusSub = r.statusStream.listen((s) {
+        if (!mounted) return;
+        setState(() => _status = s);
+      });
+      if (!_rfidListenerAttached) {
+        _rfidListenerAttached = true;
+        _tagSub = r.tagStream.listen((tagId) {
+          if (mounted && _scannedTag == null) {
+            if (!RfidDuplicateFilter.shouldProcess(tagId)) {
+              debugPrint('🔁 تجاهل بطاقة مكررة (ربط): $tagId');
+              return;
+            }
+            setState(() => _scannedTag = tagId);
+            _animationController.stop();
+            _reader?.stopScanning();
+            RfidSessionCoordinator.instance.setCashierActive(false);
+          }
+        });
+      }
     } catch (e) {
-      debugPrint('فشل في الاتصال بقارئ RFID: $e');
+      debugPrint('فشل تحميل قارئ الدور: $e');
     }
   }
 
   @override
   void dispose() {
     _animationController.dispose();
-    // إيقاف المسح عند الخروج من الشاشة
+    // إيقاف المسح عند الخروج من الشاشة وإلغاء الاشتراكات
     try {
-      ref.read(rfidNotifierProvider.notifier).stopScanning();
-    } catch (e) {
-      // تجاهل الأخطاء عند الخروج
-    }
+      _reader?.stopScanning();
+    } catch (_) {}
+    try {
+      _tagSub?.cancel();
+    } catch (_) {}
+    try {
+      _statusSub?.cancel();
+    } catch (_) {}
+    RfidSessionCoordinator.instance.setCashierActive(false);
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    final rfidStatus = ref.watch(rfidNotifierProvider);
-
-    // Listen for new tags
-    ref.listen<AsyncValue<String>>(rfidTagProvider, (previous, next) {
-      next.whenData((tagId) {
-        if (mounted && _scannedTag == null) {
-          if (!RfidDuplicateFilter.shouldProcess(tagId)) {
-            debugPrint('🔁 تجاهل بطاقة مكررة (ربط): $tagId');
-            return;
-          }
-          // فقط إذا لم يتم قراءة بطاقة من قبل
-          setState(() {
-            _scannedTag = tagId;
-          });
-          _animationController.stop();
-          // إيقاف المسح فوراً
-          ref.read(rfidNotifierProvider.notifier).stopScanning();
-        }
-      });
-    });
+    final rfidStatus = AsyncValue.data(_status);
 
     // Control animation based on scanning state
-    rfidStatus.whenData((status) {
-      if (status == RfidReaderStatus.scanning &&
-          !_animationController.isAnimating) {
-        _animationController.repeat();
-      } else if (status != RfidReaderStatus.scanning &&
-          _animationController.isAnimating) {
-        _animationController.stop();
-      }
-    });
+    if (_status == RfidReaderStatus.scanning &&
+        !_animationController.isAnimating) {
+      _animationController.repeat();
+    } else if (_status != RfidReaderStatus.scanning &&
+        _animationController.isAnimating) {
+      _animationController.stop();
+    }
 
-    return AdaptiveScaffold(
-      title: 'ربط بطاقة RFID',
-      body: Column(
-        children: [
-          // معلومات الصنف
-          _buildItemInfo(),
+    return Container(
+      color: Color(0xfff6f8fa), // خلفية موحدة
+      child: AdaptiveScaffold(
+        title: 'ربط بطاقة RFID',
+        showBackButton: false,
+        body: Column(
+          children: [
+            // معلومات الصنف
+            _buildItemInfo(),
 
-          const SizedBox(height: 30),
+            const SizedBox(height: 30),
 
-          // حالة قارئ RFID
-          _buildReaderStatus(rfidStatus),
+            // حالة قارئ RFID
+            _buildReaderStatus(rfidStatus),
 
-          const SizedBox(height: 30),
+            const SizedBox(height: 30),
 
-          // منطقة المسح
-          Expanded(child: _buildScanningArea(rfidStatus)),
+            // منطقة المسح
+            Expanded(child: _buildScanningArea(rfidStatus)),
 
-          // الأزرار
-          _buildActionButtons(rfidStatus),
-        ],
+            // الأزرار
+            _buildActionButtons(rfidStatus),
+          ],
+        ),
       ),
     );
   }
 
   Widget _buildItemInfo() {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: CupertinoColors.systemBackground,
-        borderRadius: BorderRadius.circular(12),
-        boxShadow: [
-          BoxShadow(
-            color: CupertinoColors.systemGrey.withValues(alpha: 0.1),
-            blurRadius: 8,
-            offset: const Offset(0, 2),
-          ),
-        ],
-      ),
+    return AdaptiveCard(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -359,43 +367,45 @@ class _LinkRfidScreenState extends ConsumerState<LinkRfidScreen>
           if (!isScanning && _scannedTag == null) ...[
             SizedBox(
               width: double.infinity,
-              child: CupertinoButton.filled(
+              child: AppButton.primary(
+                text: 'بدء المسح',
                 onPressed: _startScanning,
-                child: const Text('بدء المسح'),
               ),
             ),
             const SizedBox(height: 10),
             SizedBox(
               width: double.infinity,
-              child: CupertinoButton(
+              child: AppButton.secondary(
+                text: 'اختبار الاتصال',
                 onPressed: _testConnection,
-                child: const Text('اختبار الاتصال'),
               ),
             ),
           ] else if (isScanning) ...[
             SizedBox(
               width: double.infinity,
-              child: CupertinoButton(
-                color: CupertinoColors.systemRed,
-                onPressed: () =>
-                    ref.read(rfidNotifierProvider.notifier).stopScanning(),
-                child: const Text('إيقاف المسح'),
+              child: AppButton.destructive(
+                text: 'إيقاف المسح',
+                onPressed: () async {
+                  await _reader?.stopScanning();
+                  RfidSessionCoordinator.instance.setCashierActive(false);
+                  setState(() {});
+                },
               ),
             ),
           ] else if (_scannedTag != null) ...[
             SizedBox(
               width: double.infinity,
-              child: CupertinoButton.filled(
+              child: AppButton.primary(
+                text: 'ربط البطاقة',
                 onPressed: _linkRfidTag,
-                child: const Text('ربط البطاقة'),
               ),
             ),
             const SizedBox(height: 10),
             SizedBox(
               width: double.infinity,
-              child: CupertinoButton(
+              child: AppButton.secondary(
+                text: 'مسح مرة أخرى',
                 onPressed: _resetScanning,
-                child: const Text('مسح مرة أخرى'),
               ),
             ),
           ],
@@ -412,37 +422,28 @@ class _LinkRfidScreenState extends ConsumerState<LinkRfidScreen>
   }
 
   Future<void> _startScanning() async {
-    final rfidNotifier = ref.read(rfidNotifierProvider.notifier);
-    final currentStatus = ref.read(rfidNotifierProvider);
-
-    // التحقق من حالة الاتصال
-    final isConnected = currentStatus.when(
-      data: (status) =>
-          status == RfidReaderStatus.connected ||
-          status == RfidReaderStatus.scanning,
-      loading: () => false,
-      error: (_, __) => false,
-    );
-
-    if (!isConnected) {
-      // محاولة الاتصال أولاً
+    if (_reader == null) {
+      await _loadRoleReader();
+      if (_reader == null) return;
+    }
+    // Guard: must be connected
+    if (_reader!.currentStatus == RfidReaderStatus.disconnected) {
+      // Attempt to connect via assignment provider again
+      await _loadRoleReader();
+    }
+    if (_reader!.currentStatus == RfidReaderStatus.connected ||
+        _reader!.currentStatus == RfidReaderStatus.scanning) {
       try {
-        await rfidNotifier.connect(
-          port: 'COM3',
-          baudRate: 115200,
-          timeout: 5000,
-        );
-        // انتظار قصير للتأكد من الاتصال
-        await Future.delayed(const Duration(milliseconds: 500));
+        RfidSessionCoordinator.instance.setCashierActive(true);
+        await _reader!.startScanning();
+        setState(() {});
       } catch (e) {
         if (mounted) {
           showCupertinoDialog(
             context: context,
             builder: (context) => CupertinoAlertDialog(
-              title: const Text('خطأ في الاتصال'),
-              content: const Text(
-                'لا يمكن الاتصال بقارئ RFID. تأكد من توصيل الجهاز وإعدادات المنفذ.',
-              ),
+              title: const Text('خطأ في المسح'),
+              content: Text('فشل في بدء مسح RFID: $e'),
               actions: [
                 CupertinoDialogAction(
                   child: const Text('موافق'),
@@ -452,26 +453,14 @@ class _LinkRfidScreenState extends ConsumerState<LinkRfidScreen>
             ),
           );
         }
-        return;
       }
-    }
-
-    // بدء المسح
-    try {
-      await rfidNotifier.startScanning();
-    } catch (e) {
+    } else {
       if (mounted) {
         showCupertinoDialog(
           context: context,
-          builder: (context) => CupertinoAlertDialog(
-            title: const Text('خطأ في المسح'),
-            content: Text('فشل في بدء مسح RFID: $e'),
-            actions: [
-              CupertinoDialogAction(
-                child: const Text('موافق'),
-                onPressed: () => Navigator.pop(context),
-              ),
-            ],
+          builder: (context) => const CupertinoAlertDialog(
+            title: Text('القارئ غير متصل'),
+            content: Text('يرجى تعيين جهاز الكاشير والاتصال به من الإعدادات.'),
           ),
         );
       }
@@ -493,8 +482,11 @@ class _LinkRfidScreenState extends ConsumerState<LinkRfidScreen>
       ref.invalidate(itemsByStatusProvider(ItemStatus.needsRfid));
       ref.invalidate(itemsByStatusProvider(ItemStatus.inStock));
 
-      // إيقاف المسح نهائياً
-      await ref.read(rfidNotifierProvider.notifier).stopScanning();
+      // إيقاف المسح نهائياً للقارئ الخاص بالشاشة
+      try {
+        await _reader?.stopScanning();
+      } catch (_) {}
+      RfidSessionCoordinator.instance.setCashierActive(false);
 
       if (mounted) {
         showCupertinoDialog(
@@ -541,8 +533,8 @@ class _LinkRfidScreenState extends ConsumerState<LinkRfidScreen>
 
   Future<void> _testConnection() async {
     try {
-      final rfidNotifier = ref.read(rfidNotifierProvider.notifier);
-      await rfidNotifier.testConnection();
+      if (_reader == null) await _loadRoleReader();
+      await _reader?.testConnection();
 
       if (mounted) {
         showCupertinoDialog(

@@ -1,4 +1,8 @@
 import 'package:flutter/cupertino.dart';
+import 'package:fluent_ui/fluent_ui.dart';
+
+import 'package:flutter/material.dart'
+    show Material; // لاستخدام Material في الـ Overlay
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'dart:async';
@@ -14,11 +18,13 @@ import '../widgets/app_loading_error_widget.dart';
 import '../models/cart_item.dart';
 import '../providers/cart_provider.dart';
 import '../providers/settings_provider.dart';
-import '../providers/rfid_provider.dart';
 import '../services/rfid_service.dart';
+import '../providers/rfid_role_reader_provider.dart';
+import '../services/rfid_device_assignments.dart';
+import '../services/rfid_session_coordinator.dart';
 import '../utils/rfid_duplicate_filter.dart';
 import 'checkout_screen.dart';
-import 'home_screen.dart';
+import '../widgets/side_sheet.dart';
 
 class PosScreen extends ConsumerStatefulWidget {
   const PosScreen({super.key});
@@ -28,123 +34,147 @@ class PosScreen extends ConsumerStatefulWidget {
 }
 
 class _PosScreenState extends ConsumerState<PosScreen> {
-  final _goldPriceController = TextEditingController();
-  final _silverPriceController = TextEditingController();
+  // Dynamic controllers for each material that has a price (variable materials)
+  final Map<int, TextEditingController> _materialPriceControllers = {};
   final _searchController = TextEditingController();
-  bool _isListeningToRfid = false;
   int? _selectedCategoryId;
   // Focus node to keep keyboard focus for wedge RFID scanners
   final FocusNode _keyboardFocusNode = FocusNode();
-  // Prevent duplicate listener registrations
-  bool _rfidTagListenerRegistered = false;
+  // (تمت إزالة مستمعي Riverpod لبطاقات RFID – نستخدم اشتراك القارئ مباشرة)
+  OverlayEntry? _checkoutOverlay;
 
   // لقراءة RFID من لوحة المفاتيح
   String _rfidBuffer = '';
   Timer? _rfidInputTimer;
 
-  // تنظيف مدخلات RFID من الضجيج (محارف التحكم والتشكيل العربي)
-  String _sanitizeRfidInput(String raw) {
-    // إزالة محارف التحكم عدا \n
-    String cleaned = raw.replaceAll(RegExp(r'[\x00-\x09\x0B-\x1F]'), '');
-    // إزالة التشكيل العربي
-    cleaned = cleaned.replaceAll(
-      RegExp(r'[\u0610-\u061A\u064B-\u065F\u06D6-\u06ED]'),
-      '',
-    );
-    return cleaned.trim();
-  }
+  // (تم حذف دالة تنظيف مدخلات RFID لعدم استخدامها)
+
+  // قارئ مخصص لدور الكاشير
+  RfidServiceReal? _cashierReader;
+  StreamSubscription<String>? _cashierTagSub;
+  StreamSubscription<RfidReaderStatus>? _cashierStatusSub;
+  RfidReaderStatus _cashierStatus = RfidReaderStatus.disconnected;
+  String? _cashierDeviceLabel;
 
   @override
   void initState() {
     super.initState();
     _loadCurrentPrices();
     _rfidBuffer = '';
-    _isListeningToRfid = false;
-    _startRfidListening();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _initCashierReader();
+    });
   }
 
   @override
   void dispose() {
-    _goldPriceController.dispose();
-    _silverPriceController.dispose();
+    for (final c in _materialPriceControllers.values) {
+      c.dispose();
+    }
     _searchController.dispose();
     _rfidInputTimer?.cancel();
     _keyboardFocusNode.dispose();
+    try {
+      _cashierReader?.stopScanning();
+    } catch (_) {}
+    try {
+      _cashierTagSub?.cancel();
+    } catch (_) {}
+    try {
+      _cashierStatusSub?.cancel();
+    } catch (_) {}
+    RfidSessionCoordinator.instance.setCashierActive(false);
     super.dispose();
   }
 
   Future<void> _loadCurrentPrices() async {
-    final settingsRepository = ref.read(settingsRepositoryProvider);
-    final goldPrice = await settingsRepository.getGoldPrice();
-    final silverPrice = await settingsRepository.getSilverPrice();
+    // Load materials and initialize controllers
+    final materials = await ref
+        .read(materialRepositoryProvider)
+        .getAllMaterials();
     if (!mounted) return;
-    _goldPriceController.text = goldPrice.toString();
-    _silverPriceController.text = silverPrice.toString();
-  }
-
-  void _startRfidListening() {
-    if (!_isListeningToRfid) {
-      _isListeningToRfid = true;
-      // في بيئة الاختبار (widget tests) نتجنب تشغيل المسح لتفادي المؤقتات المعلقة
-      final isTestEnv =
-          const bool.fromEnvironment('FLUTTER_TEST') ||
-          Platform.environment.containsKey('FLUTTER_TEST');
-      if (isTestEnv) return;
-      Future.microtask(() {
-        if (mounted) {
-          ref.read(rfidNotifierProvider.notifier).startScanning();
-        }
-      });
+    for (final m in materials) {
+      // Consider a material with a price if variable OR price_per_gram > 0
+      if (m.isVariable || (m.pricePerGram > 0)) {
+        _materialPriceControllers.putIfAbsent(
+          m.id!,
+          () => TextEditingController(text: m.pricePerGram.toString()),
+        );
+      }
     }
   }
+
+  Future<void> _initCashierReader() async {
+    try {
+      final reader = await ref.read(
+        rfidReaderForRoleProvider(RfidRole.cashier).future,
+      );
+      final assign = RfidDeviceAssignmentsStorage();
+      final cfg = await assign.load(RfidRole.cashier);
+      if (!mounted) return;
+      setState(() {
+        _cashierReader = reader;
+        _cashierStatus = reader.currentStatus;
+        _cashierDeviceLabel = cfg != null
+            ? '${cfg.interface}:${cfg.identifier}'
+            : 'غير معيّن';
+      });
+      _cashierStatusSub?.cancel();
+      _cashierStatusSub = reader.statusStream.listen((s) {
+        if (!mounted) return;
+        setState(() => _cashierStatus = s);
+      });
+      _cashierTagSub?.cancel();
+      _cashierTagSub = reader.tagStream.listen((tagId) {
+        if (tagId.isNotEmpty) _handleRfidTag(tagId);
+      });
+      // ابدأ المسح إذا كان متصلاً
+      if (reader.currentStatus == RfidReaderStatus.connected) {
+        await reader.startScanning();
+        RfidSessionCoordinator.instance.setCashierActive(true);
+        if (mounted) setState(() {});
+      }
+    } catch (e) {
+      // صامت: قد لا يكون الجهاز معيناً
+    }
+  }
+
+  // تم الاستغناء عن دالة بدء الاستماع القديمة
 
   @override
   Widget build(BuildContext context) {
     final cart = ref.watch(cartProvider);
-    final rfidStatus = ref.watch(rfidNotifierProvider);
     final currency = ref.watch(currencyProvider);
-    // Register RFID tag listener only once to avoid callbacks after dispose
-    if (!_rfidTagListenerRegistered) {
-      _rfidTagListenerRegistered = true;
-      ref.listen<AsyncValue<String>>(rfidTagProvider, (previous, next) {
-        // If widget disposed, skip (avoid Bad state: ref after dispose)
-        if (!mounted) return;
-        next.whenData((tagId) {
-          if (tagId.isNotEmpty) {
-            _handleRfidTag(tagId);
-          }
-        });
-      });
-    }
+    final wedgeEnabled = ref.watch(posKeyboardWedgeEnabledProvider);
+    final rfidStatusLocal = _cashierStatus;
 
     return KeyboardListener(
       focusNode: _keyboardFocusNode,
-      autofocus: true,
-      onKeyEvent: _handleKeyEvent,
-      child: AdaptiveScaffold(
-        title: 'نقطة البيع',
-        actions: [
-          CupertinoButton(
-            padding: EdgeInsets.zero,
-            onPressed: () {
-              Navigator.of(context).pushReplacement(
-                CupertinoPageRoute(builder: (_) => const HomeScreen()),
-              );
-            },
-            // استبدال أيقونة البيت بسهم الرجوع
-            child: const Icon(CupertinoIcons.back),
-          ),
-        ],
-        body: LayoutBuilder(
-          builder: (context, constraints) {
-            final isTablet = constraints.maxWidth > 800;
+      autofocus: wedgeEnabled.maybeWhen(data: (v) => v, orElse: () => true),
+      onKeyEvent: (event) {
+        final enabled = wedgeEnabled.maybeWhen(
+          data: (v) => v,
+          orElse: () => true,
+        );
+        if (!enabled) return; // ignore keyboard input when disabled
+        _handleKeyEvent(event);
+      },
+      child: Container(
+        color: Color(0xfff6f8fa), // خلفية موحدة
+        child: AdaptiveScaffold(
+          title: 'نقطة البيع',
+          commandBarItems: [], // حذف زر الرجوع
+          body: LayoutBuilder(
+            builder: (context, constraints) {
+              final isTablet = constraints.maxWidth > 800;
 
-            if (isTablet) {
-              return _buildTabletLayout(cart, rfidStatus, currency);
-            } else {
-              return _buildPhoneLayout(cart, rfidStatus, currency);
-            }
-          },
+              if (isTablet) {
+                return _buildTabletLayout(cart, rfidStatusLocal, currency);
+              } else {
+                return _buildPhoneLayout(cart, rfidStatusLocal, currency);
+              }
+            },
+          ),
         ),
       ),
     );
@@ -152,7 +182,7 @@ class _PosScreenState extends ConsumerState<PosScreen> {
 
   Widget _buildTabletLayout(
     Cart cart,
-    AsyncValue<RfidReaderStatus> rfidStatus,
+    RfidReaderStatus rfidStatus,
     AsyncValue<String> currency,
   ) {
     return Row(
@@ -165,14 +195,14 @@ class _PosScreenState extends ConsumerState<PosScreen> {
         Expanded(flex: 3, child: _buildItemsGrid()),
         const SizedBox(width: 16),
         // Right Side - Controls
-        SizedBox(width: 250, child: _buildControlPanel(rfidStatus, currency)),
+        SizedBox(width: 260, child: _buildControlPanel(rfidStatus, currency)),
       ],
     );
   }
 
   Widget _buildPhoneLayout(
     Cart cart,
-    AsyncValue<RfidReaderStatus> rfidStatus,
+    RfidReaderStatus rfidStatus,
     AsyncValue<String> currency,
   ) {
     return Column(
@@ -195,9 +225,11 @@ class _PosScreenState extends ConsumerState<PosScreen> {
         // مربع بحث RFID
         Padding(
           padding: const EdgeInsets.all(16.0),
-          child: CupertinoSearchTextField(
+          child: TextBox(
             controller: _searchController,
-            placeholder: 'بحث برقم بطاقة RFID أو SKU...',
+            placeholder:
+                'بحث برقم بطاقة RFID أو SKU...'
+                ' (اضغط Enter للبحث)',
             onSubmitted: _handleSearchSubmit,
           ),
         ),
@@ -206,29 +238,51 @@ class _PosScreenState extends ConsumerState<PosScreen> {
             scrollDirection: Axis.horizontal,
             child: Row(
               children: [
-                CupertinoButton(
-                  child: Text(
-                    "الكل",
-                    style: TextStyle(
-                      color: _selectedCategoryId == null
-                          ? CupertinoColors.activeBlue
-                          : CupertinoColors.secondaryLabel,
-                    ),
-                  ),
-                  onPressed: () => setState(() => _selectedCategoryId = null),
-                ),
-                ...categories.map(
-                  (category) => CupertinoButton(
-                    child: Text(
-                      category.nameAr,
-                      style: TextStyle(
-                        color: _selectedCategoryId == category.id
-                            ? CupertinoColors.activeBlue
-                            : CupertinoColors.secondaryLabel,
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 8.0),
+                  child: Button(
+                    style: ButtonStyle(
+                      backgroundColor: WidgetStateProperty.all(
+                        _selectedCategoryId == null
+                            ? Color(0xff0078D4)
+                            : Color(0xffe5e5e5),
                       ),
                     ),
-                    onPressed: () =>
-                        setState(() => _selectedCategoryId = category.id),
+                    child: Text(
+                      'الكل',
+                      style: TextStyle(
+                        color: _selectedCategoryId == null
+                            ? Colors.white
+                            : Color(0xff0078D4),
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    onPressed: () => setState(() => _selectedCategoryId = null),
+                  ),
+                ),
+                ...categories.map(
+                  (category) => Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 4.0),
+                    child: Button(
+                      style: ButtonStyle(
+                        backgroundColor: WidgetStateProperty.all(
+                          _selectedCategoryId == category.id
+                              ? Color(0xff0078D4)
+                              : Color(0xffe5e5e5),
+                        ),
+                      ),
+                      child: Text(
+                        category.nameAr,
+                        style: TextStyle(
+                          color: _selectedCategoryId == category.id
+                              ? Colors.white
+                              : Color(0xff0078D4),
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      onPressed: () =>
+                          setState(() => _selectedCategoryId = category.id),
+                    ),
                   ),
                 ),
               ],
@@ -272,7 +326,7 @@ class _PosScreenState extends ConsumerState<PosScreen> {
                 },
               );
             },
-            loading: () => const Center(child: CupertinoActivityIndicator()),
+            loading: () => const Center(child: ProgressRing()),
             error: (err, stack) => AppLoadingErrorWidget(
               title: 'خطأ في تحميل الأصناف',
               message: err.toString(),
@@ -289,40 +343,32 @@ class _PosScreenState extends ConsumerState<PosScreen> {
 
     return GestureDetector(
       onTap: () => _handleManualItemAdd(item),
-      child: Container(
-        decoration: BoxDecoration(
-          color: CupertinoColors.systemBackground,
-          borderRadius: BorderRadius.circular(12),
-          boxShadow: [
-            BoxShadow(
-              color: CupertinoColors.systemGrey.withValues(alpha: 0.1),
-              blurRadius: 4,
-              offset: const Offset(0, 2),
-            ),
-          ],
-        ),
+      child: Card(
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Container(
               height: 80,
               width: double.infinity,
-              color: CupertinoColors.systemGrey6,
+              color: Colors.black.withAlpha(8),
               child: Builder(
                 builder: (context) {
                   try {
                     if (item.imagePath != null && item.imagePath!.isNotEmpty) {
                       final f = File(item.imagePath!);
                       if (f.existsSync()) {
-                        return Image.file(f, fit: BoxFit.contain);
+                        return ClipRRect(
+                          borderRadius: BorderRadius.circular(6),
+                          child: Image.file(f, fit: BoxFit.contain),
+                        );
                       }
                     }
                   } catch (_) {}
-                  return const Center(
+                  return Center(
                     child: Icon(
-                      CupertinoIcons.photo,
+                      FluentIcons.photo,
                       size: 30,
-                      color: CupertinoColors.systemGrey,
+                      color: FluentTheme.of(context).inactiveColor,
                     ),
                   );
                 },
@@ -349,9 +395,9 @@ class _PosScreenState extends ConsumerState<PosScreen> {
                       );
                       return Text(
                         material.nameAr,
-                        style: const TextStyle(
+                        style: TextStyle(
                           fontSize: 10,
-                          color: CupertinoColors.activeBlue,
+                          color: FluentTheme.of(context).accentColor,
                         ),
                       );
                     },
@@ -372,42 +418,24 @@ class _PosScreenState extends ConsumerState<PosScreen> {
   }
 
   Widget _buildControlPanel(
-    AsyncValue<RfidReaderStatus> rfidStatus,
+    RfidReaderStatus rfidStatus,
     AsyncValue<String> currency,
   ) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        // حالة RFID
-        _buildRfidStatusCard(rfidStatus),
-
-        const SizedBox(height: 16),
-
-        // تحديث أسعار الجرام
-        _buildPriceUpdateCard(currency),
-
-        const SizedBox(height: 16),
-
-        // أزرار سريعة
-        _buildQuickActions(),
-      ],
+    return SingleChildScrollView(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          _buildRfidStatusCard(rfidStatus),
+          const SizedBox(height: 16),
+          _buildPriceUpdateCard(currency),
+        ],
+      ),
     );
   }
 
-  Widget _buildRfidStatusCard(AsyncValue<RfidReaderStatus> rfidStatus) {
-    return Container(
+  Widget _buildRfidStatusCard(RfidReaderStatus status) {
+    return Card(
       padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: CupertinoColors.systemBackground,
-        borderRadius: BorderRadius.circular(12),
-        boxShadow: [
-          BoxShadow(
-            color: CupertinoColors.systemGrey.withValues(alpha: 0.1),
-            blurRadius: 8,
-            offset: const Offset(0, 2),
-          ),
-        ],
-      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -416,26 +444,14 @@ class _PosScreenState extends ConsumerState<PosScreen> {
             style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
           ),
           const SizedBox(height: 12),
-          rfidStatus.when(
-            data: (status) => _buildStatusIndicator(status),
-            loading: () => const Row(
-              children: [
-                CupertinoActivityIndicator(),
-                SizedBox(width: 12),
-                Text('جاري الاتصال...'),
-              ],
+          _buildStatusIndicator(status),
+          if (_cashierDeviceLabel != null) ...[
+            const SizedBox(height: 8),
+            Text(
+              'الجهاز: ${_cashierDeviceLabel!}',
+              style: FluentTheme.of(context).typography.caption,
             ),
-            error: (error, stack) => Row(
-              children: [
-                const Icon(
-                  CupertinoIcons.xmark_circle_fill,
-                  color: CupertinoColors.systemRed,
-                ),
-                const SizedBox(width: 12),
-                Expanded(child: Text('خطأ: $error')),
-              ],
-            ),
-          ),
+          ],
         ],
       ),
     );
@@ -486,10 +502,9 @@ class _PosScreenState extends ConsumerState<PosScreen> {
         ),
         if (status == RfidReaderStatus.disconnected ||
             status == RfidReaderStatus.error)
-          CupertinoButton(
-            padding: EdgeInsets.zero,
-            onPressed: () {
-              ref.read(rfidNotifierProvider.notifier).testConnection();
+          Button(
+            onPressed: () async {
+              await _initCashierReader();
             },
             child: const Text('إعادة الاتصال'),
           ),
@@ -498,187 +513,138 @@ class _PosScreenState extends ConsumerState<PosScreen> {
   }
 
   Widget _buildPriceUpdateCard(AsyncValue<String> currency) {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: CupertinoColors.systemBackground,
-        borderRadius: BorderRadius.circular(12),
-        boxShadow: [
-          BoxShadow(
-            color: CupertinoColors.systemGrey.withValues(alpha: 0.1),
-            blurRadius: 8,
-            offset: const Offset(0, 2),
-          ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Text(
-            'أسعار الجرام',
-            style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
-          ),
-          const SizedBox(height: 16),
-          Row(
+    final materialsState = ref.watch(materialNotifierProvider);
+
+    return materialsState.when(
+      data: (materials) {
+        final pricedMaterials = (materials.where(
+          (m) => m.isVariable || m.pricePerGram > 0,
+        )).toList()..sort((a, b) => a.nameAr.compareTo(b.nameAr));
+        if (pricedMaterials.isEmpty) {
+          return const InfoBar(
+            title: Text('لا توجد مواد ذات سعر متغير'),
+            severity: InfoBarSeverity.info,
+          );
+        }
+
+        // Ensure controllers exist
+        for (final m in pricedMaterials) {
+          _materialPriceControllers.putIfAbsent(
+            m.id!,
+            () => TextEditingController(text: m.pricePerGram.toString()),
+          );
+        }
+
+        return Card(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text('سعر الذهب'),
-                    const SizedBox(height: 8),
-                    CupertinoTextField(
-                      controller: _goldPriceController,
-                      keyboardType: const TextInputType.numberWithOptions(
-                        decimal: true,
-                      ),
-                      onSubmitted: _updateGoldPrice,
-                    ),
-                  ],
-                ),
+              const Text(
+                'أسعار الجرام',
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
               ),
-              const SizedBox(width: 16),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text('سعر الفضة'),
-                    const SizedBox(height: 8),
-                    CupertinoTextField(
-                      controller: _silverPriceController,
-                      keyboardType: const TextInputType.numberWithOptions(
-                        decimal: true,
+              const SizedBox(height: 12),
+              ...pricedMaterials.map((m) {
+                final controller = _materialPriceControllers[m.id]!;
+                return Padding(
+                  padding: const EdgeInsets.only(bottom: 10),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        m.nameAr,
+                        style: const TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w500,
+                        ),
                       ),
-                      onSubmitted: _updateSilverPrice,
-                    ),
-                  ],
+                      const SizedBox(height: 6),
+                      TextBox(
+                        controller: controller,
+                        keyboardType: const TextInputType.numberWithOptions(
+                          decimal: true,
+                        ),
+                        placeholder: 'سعر الجرام',
+                        onChanged: (v) {
+                          final value = double.tryParse(v) ?? 0.0;
+                          ref
+                              .read(materialNotifierProvider.notifier)
+                              .updateMaterialPrice(m.id!, value);
+                        },
+                      ),
+                    ],
+                  ),
+                );
+              }),
+              const SizedBox(height: 8),
+              SizedBox(
+                width: double.infinity,
+                child: FilledButton(
+                  onPressed: _updateAllMaterialPrices,
+                  child: const Text('تحديث السعر'),
                 ),
               ),
             ],
           ),
-          const SizedBox(height: 12),
-          Row(
-            children: [
-              Expanded(
-                child: CupertinoButton.filled(
-                  onPressed: () => _updateGoldPrice(_goldPriceController.text),
-                  child: const Text('تحديث سعر الذهب'),
-                ),
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: CupertinoButton.filled(
-                  onPressed: () =>
-                      _updateSilverPrice(_silverPriceController.text),
-                  child: const Text('تحديث سعر الفضة'),
-                ),
-              ),
-            ],
-          ),
-        ],
+        );
+      },
+      loading: () => const Center(child: ProgressRing()),
+      error: (e, _) => Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: CupertinoColors.systemBackground,
+          borderRadius: BorderRadius.circular(12),
+          boxShadow: [
+            BoxShadow(
+              color: CupertinoColors.systemGrey.withValues(alpha: 0.1),
+              blurRadius: 8,
+              offset: const Offset(0, 2),
+            ),
+          ],
+        ),
+        child: Text('خطأ في تحميل المواد: $e'),
       ),
     );
   }
 
-  Widget _buildQuickActions() {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: CupertinoColors.systemBackground,
-        borderRadius: BorderRadius.circular(12),
-        boxShadow: [
-          BoxShadow(
-            color: CupertinoColors.systemGrey.withValues(alpha: 0.1),
-            blurRadius: 8,
-            offset: const Offset(0, 2),
-          ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          const Text(
-            'إجراءات سريعة',
-            style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
-          ),
-          const SizedBox(height: 16),
-          CupertinoButton.filled(
-            onPressed: () {
-              if (_searchController.text.isNotEmpty) {
-                _handleSearchSubmit(_searchController.text);
-              }
-            },
-            child: const Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Icon(CupertinoIcons.search, color: CupertinoColors.white),
-                SizedBox(width: 8),
-                Text('بحث عن صنف'),
-              ],
-            ),
-          ),
-
-          const SizedBox(height: 8),
-          CupertinoButton(
-            color: CupertinoColors.systemGrey,
-            onPressed: _clearCart,
-            child: const Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Icon(CupertinoIcons.trash, color: CupertinoColors.white),
-                SizedBox(width: 8),
-                Text('مسح السلة'),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
+  // Removed quick actions panel per user request
 
   Widget _buildCartSection(Cart cart, AsyncValue<String> currency) {
-    return Container(
-      decoration: BoxDecoration(
-        color: CupertinoColors.systemBackground,
-        borderRadius: BorderRadius.circular(12),
-        boxShadow: [
-          BoxShadow(
-            color: CupertinoColors.systemGrey.withValues(alpha: 0.1),
-            blurRadius: 8,
-            offset: const Offset(0, 2),
-          ),
-        ],
-      ),
+    return Card(
       child: Column(
         children: [
           // رأس السلة
-          Container(
-            padding: const EdgeInsets.all(16),
-            decoration: const BoxDecoration(
-              border: Border(
-                bottom: BorderSide(color: CupertinoColors.separator),
-              ),
-            ),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Text(
-                  'سلة المشتريات (${cart.itemCount})',
-                  style: const TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-                if (cart.isNotEmpty)
-                  CupertinoButton(
-                    padding: EdgeInsets.zero,
-                    onPressed: _clearCart,
-                    child: const Icon(
-                      CupertinoIcons.trash,
-                      color: CupertinoColors.systemRed,
+          Acrylic(
+            luminosityAlpha: 0.03,
+            tintAlpha: 0.08,
+            blurAmount: 8.0,
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text(
+                    'سلة المشتريات (${cart.itemCount})',
+                    style: const TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.w600,
                     ),
                   ),
-              ],
+                  if (cart.isNotEmpty)
+                    GestureDetector(
+                      onTap: _clearCart,
+                      child: Padding(
+                        padding: const EdgeInsets.all(4.0),
+                        child: Icon(
+                          FluentIcons.delete,
+                          color: Colors.red,
+                          size: 22,
+                        ),
+                      ),
+                    ),
+                ],
+              ),
             ),
           ),
 
@@ -690,34 +656,33 @@ class _PosScreenState extends ConsumerState<PosScreen> {
           ),
 
           // ملخص الفاتورة
-          if (cart.isNotEmpty) _buildCartSummary(cart, currency),
+          cart.isNotEmpty
+              ? _buildCartSummary(cart, currency)
+              : const SizedBox.shrink(),
         ],
       ),
     );
   }
 
   Widget _buildEmptyCart() {
-    return const Center(
+    return Center(
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
           Icon(
-            CupertinoIcons.cart,
+            FluentIcons.shopping_cart,
             size: 80,
-            color: CupertinoColors.systemGrey3,
+            color: FluentTheme.of(context).inactiveColor,
           ),
-          SizedBox(height: 16),
+          const SizedBox(height: 16),
           Text(
             'السلة فارغة',
-            style: TextStyle(
-              fontSize: 18,
-              color: CupertinoColors.secondaryLabel,
-            ),
+            style: FluentTheme.of(context).typography.subtitle,
           ),
-          SizedBox(height: 8),
+          const SizedBox(height: 8),
           Text(
             'امسح بطاقة RFID لإضافة صنف',
-            style: TextStyle(color: CupertinoColors.tertiaryLabel),
+            style: FluentTheme.of(context).typography.caption,
           ),
         ],
       ),
@@ -736,42 +701,36 @@ class _PosScreenState extends ConsumerState<PosScreen> {
   }
 
   Widget _buildCartItemCard(CartItem cartItem, AsyncValue<String> currency) {
-    return Container(
-      margin: const EdgeInsets.only(bottom: 12),
+    return Card(
       padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: CupertinoColors.systemGrey6,
-        borderRadius: BorderRadius.circular(8),
-      ),
       child: Row(
         children: [
           // صورة المنتج
-          Container(
+          SizedBox(
             width: 50,
             height: 50,
-            decoration: BoxDecoration(
-              color: CupertinoColors.systemGrey5,
-              borderRadius: BorderRadius.circular(6),
-            ),
-            child: Builder(
-              builder: (context) {
-                try {
-                  final path = cartItem.item.imagePath;
-                  if (path != null && path.isNotEmpty) {
-                    final f = File(path);
-                    if (f.existsSync()) {
-                      return ClipRRect(
-                        borderRadius: BorderRadius.circular(6),
-                        child: Image.file(f, fit: BoxFit.contain),
-                      );
+            child: Card(
+              padding: EdgeInsets.zero,
+              child: Builder(
+                builder: (context) {
+                  try {
+                    final path = cartItem.item.imagePath;
+                    if (path != null && path.isNotEmpty) {
+                      final f = File(path);
+                      if (f.existsSync()) {
+                        return ClipRRect(
+                          borderRadius: BorderRadius.circular(6),
+                          child: Image.file(f, fit: BoxFit.contain),
+                        );
+                      }
                     }
-                  }
-                } catch (_) {}
-                return const Icon(
-                  CupertinoIcons.cube_box,
-                  color: CupertinoColors.systemGrey3,
-                );
-              },
+                  } catch (_) {}
+                  return const Icon(
+                    CupertinoIcons.cube_box,
+                    color: CupertinoColors.systemGrey,
+                  );
+                },
+              ),
             ),
           ),
 
@@ -810,14 +769,12 @@ class _PosScreenState extends ConsumerState<PosScreen> {
             ),
           ),
 
-          // زر الحذف فقط
-          CupertinoButton(
-            padding: const EdgeInsets.all(8),
-            onPressed: () => _removeFromCart(cartItem.item.id!),
-            child: const Icon(
-              CupertinoIcons.delete,
-              color: CupertinoColors.systemRed,
-              size: 24,
+          // أيقونة حذف فقط بدون زر
+          GestureDetector(
+            onTap: () => _removeFromCart(cartItem.item.id!),
+            child: Padding(
+              padding: const EdgeInsets.all(4.0),
+              child: Icon(FluentIcons.delete, color: Colors.red, size: 22),
             ),
           ),
         ],
@@ -829,40 +786,39 @@ class _PosScreenState extends ConsumerState<PosScreen> {
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: const BoxDecoration(
-        border: Border(top: BorderSide(color: CupertinoColors.separator)),
+        border: Border(
+          top: BorderSide(color: Color(0x14000000)),
+        ), // subtle divider
       ),
       child: Column(
         children: [
-          // ملخص الأسعار
-          _buildSummaryRow('المجموع الفرعي', cart.subtotal, currency),
+          // تم إخفاء المجموع الفرعي بناءً على طلب المستخدم
           if (cart.totalDiscount > 0)
             _buildSummaryRow('الخصم', -cart.totalDiscount, currency),
           if (cart.taxAmount > 0)
             _buildSummaryRow('الضريبة', cart.taxAmount, currency),
 
           const SizedBox(height: 8),
-          Container(height: 1, color: CupertinoColors.separator),
+          Container(height: 1, color: const Color(0x14000000)),
           const SizedBox(height: 8),
 
           // الإجمالي
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
+              Text(
+                cart.total.toStringAsFixed(2),
+                style: const TextStyle(
+                  fontSize: 20,
+                  fontWeight: FontWeight.bold,
+                  color: CupertinoColors.activeGreen,
+                ),
+                overflow: TextOverflow.ellipsis,
+                maxLines: 1,
+              ),
               const Text(
                 'الإجمالي',
-                style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
-              ),
-              currency.when(
-                data: (curr) => Text(
-                  '${cart.total.toStringAsFixed(2)} $curr',
-                  style: const TextStyle(
-                    fontSize: 24,
-                    fontWeight: FontWeight.bold,
-                    color: CupertinoColors.activeGreen,
-                  ),
-                ),
-                loading: () => const Text('...'),
-                error: (_, __) => const Text('خطأ'),
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
               ),
             ],
           ),
@@ -872,7 +828,7 @@ class _PosScreenState extends ConsumerState<PosScreen> {
           // زر الدفع
           SizedBox(
             width: double.infinity,
-            child: CupertinoButton.filled(
+            child: FilledButton(
               onPressed: cart.isNotEmpty ? _proceedToCheckout : null,
               child: const Text(
                 'متابعة للدفع',
@@ -937,191 +893,145 @@ class _PosScreenState extends ConsumerState<PosScreen> {
     _searchController.clear();
   }
 
-  void _updateGoldPrice(String value) async {
-    final price = double.tryParse(value);
-    if (price != null && price > 0) {
-      try {
-        final settingsNotifier = ref.read(settingsNotifierProvider.notifier);
-        await settingsNotifier.updateGoldPrice(price);
-        if (!mounted) return; // widget might have been disposed
-        _showSuccessMessage('تم تحديث سعر الذهب');
-        // إعادة حساب أسعار السلة
-        _recalculateCartPrices();
-      } catch (error) {
-        if (!mounted) return;
-        _showErrorMessage('خطأ في تحديث سعر الذهب');
+  void _updateAllMaterialPrices() async {
+    try {
+      final repo = ref.read(materialNotifierProvider.notifier);
+      bool updatedAny = false;
+      for (final entry in _materialPriceControllers.entries) {
+        final id = entry.key;
+        final txt = entry.value.text.trim();
+        final v = double.tryParse(txt);
+        if (v != null && v > 0) {
+          await repo.updateMaterialPrice(id, v);
+          updatedAny = true;
+        }
       }
-    } else {
-      if (!mounted) return;
-      _showErrorMessage('يرجى إدخال سعر صحيح');
+      if (updatedAny) {
+        _showTransientMessage('تم تحديث الأسعار');
+      } else {
+        _showTransientMessage('لا تغييرات في الأسعار');
+      }
+    } catch (e) {
+      _showTransientMessage('خطأ في تحديث الأسعار');
     }
   }
 
-  void _updateSilverPrice(String value) async {
-    final price = double.tryParse(value);
-    if (price != null && price > 0) {
-      try {
-        final settingsNotifier = ref.read(settingsNotifierProvider.notifier);
-        await settingsNotifier.updateSilverPrice(price);
-        if (!mounted) return;
-        _showSuccessMessage('تم تحديث سعر الفضة');
-        // إعادة حساب أسعار السلة
-        _recalculateCartPrices();
-      } catch (error) {
-        if (!mounted) return;
-        _showErrorMessage('خطأ في تحديث سعر الفضة');
+  void _showTransientMessage(String message) {
+    if (!mounted) return;
+    _checkoutOverlay?.remove();
+    final overlay = Overlay.of(context);
+    final entry = OverlayEntry(
+      builder: (context) => Positioned(
+        top: MediaQuery.of(context).padding.top + 80,
+        left: 20,
+        right: 20,
+        child: Material(
+          color: Colors.transparent,
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            decoration: BoxDecoration(
+              color: CupertinoColors.activeGreen,
+              borderRadius: BorderRadius.circular(8),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withAlpha(38),
+                  blurRadius: 8,
+                  offset: const Offset(0, 3),
+                ),
+              ],
+            ),
+            child: Row(
+              children: [
+                const Icon(
+                  CupertinoIcons.check_mark_circled,
+                  color: Colors.white,
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    message,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+    overlay.insert(entry);
+    _checkoutOverlay = entry;
+    Timer(const Duration(seconds: 2), () {
+      if (mounted) {
+        _checkoutOverlay?.remove();
+        _checkoutOverlay = null;
       }
-    } else {
-      if (!mounted) return;
-      _showErrorMessage('يرجى إدخال سعر صحيح');
-    }
+    });
   }
 
-  void _recalculateCartPrices() async {
-    if (!mounted) return; // guard against dispose mid-process
-    // إعادة حساب أسعار جميع الأصناف في السلة بناءً على الأسعار الجديدة
-    final cart = ref.read(cartProvider);
-    final cartNotifier = ref.read(cartProvider.notifier);
-
-    // مسح السلة وإعادة إضافة الأصناف بالأسعار الجديدة
-    cartNotifier.clearCart();
-
-    for (final cartItem in cart.items) {
-      cartNotifier.addItem(cartItem.item);
-
-      // إعادة تطبيق الكمية والخصم إذا كانت مختلفة عن الافتراضي
-      if (cartItem.quantity != 1.0) {
-        cartNotifier.updateQuantity(cartItem.item.id!, cartItem.quantity);
-      }
-      if (cartItem.discount > 0) {
-        cartNotifier.updateDiscount(cartItem.item.id!, cartItem.discount);
-      }
-    }
+  void _clearCart() {
+    ref.read(cartProvider.notifier).clearCart();
   }
 
   void _removeFromCart(int itemId) {
     ref.read(cartProvider.notifier).removeItem(itemId);
   }
 
-  void _clearCart() {
-    showCupertinoDialog(
-      context: context,
-      builder: (context) => CupertinoAlertDialog(
-        title: const Text('مسح السلة'),
-        content: const Text('هل أنت متأكد من مسح جميع الأصناف من السلة؟'),
-        actions: [
-          CupertinoDialogAction(
-            child: const Text('إلغاء'),
-            onPressed: () => Navigator.pop(context),
-          ),
-          CupertinoDialogAction(
-            isDestructiveAction: true,
-            onPressed: () {
-              ref.read(cartProvider.notifier).clearCart();
-              Navigator.pop(context);
-              _isListeningToRfid = false;
-              _startRfidListening();
-            },
-            child: const Text('مسح'),
-          ),
-        ],
-      ),
-    );
-  }
-
   void _proceedToCheckout() {
-    Navigator.push(
+    if (!mounted) return;
+    showSideSheet(
       context,
-      CupertinoPageRoute(builder: (context) => const CheckoutScreen()),
-    ).then((_) {
-      // بعد العودة من شاشة الدفع، أعد تشغيل قراءة RFID
-      _isListeningToRfid = false;
-      _startRfidListening();
-    });
-  }
-
-  void _showSuccessMessage(String message) {
-    showCupertinoDialog(
-      context: context,
-      builder: (context) => CupertinoAlertDialog(
-        title: const Text('تم بنجاح'),
-        content: Text(message),
-        actions: [
-          CupertinoDialogAction(
-            child: const Text('موافق'),
-            onPressed: () => Navigator.pop(context),
-          ),
-        ],
+      title: 'الدفع/الخروج',
+      width: 560,
+      child: CheckoutScreen(
+        embedded: true,
+        onClose: () {
+          Navigator.of(context).maybePop();
+        },
       ),
     );
   }
 
-  void _showErrorMessage(String message) {
-    showCupertinoDialog(
-      context: context,
-      builder: (context) => CupertinoAlertDialog(
-        title: const Text('خطأ'),
-        content: Text(message),
-        actions: [
-          CupertinoDialogAction(
-            child: const Text('موافق'),
-            onPressed: () => Navigator.pop(context),
-          ),
-        ],
-      ),
-    );
-  }
-
-  /// معالجة ضغطات لوحة المفاتيح لقراءة RFID
   void _handleKeyEvent(KeyEvent event) {
-    if (event is KeyDownEvent) {
-      final key = event.logicalKey;
-
-      // تجاهل مفاتيح التحكم / المعدِّلات لتقليل التحذيرات
-      if (key == LogicalKeyboardKey.shiftLeft ||
-          key == LogicalKeyboardKey.shiftRight ||
-          key == LogicalKeyboardKey.controlLeft ||
-          key == LogicalKeyboardKey.controlRight ||
-          key == LogicalKeyboardKey.altLeft ||
-          key == LogicalKeyboardKey.altRight ||
-          key == LogicalKeyboardKey.metaLeft ||
-          key == LogicalKeyboardKey.metaRight ||
-          key == LogicalKeyboardKey.capsLock ||
-          key == LogicalKeyboardKey.numLock ||
-          key == LogicalKeyboardKey.scrollLock ||
-          key == LogicalKeyboardKey.contextMenu) {
-        return;
-      }
-
-      // إذا كان Enter أو Return
-      if (key == LogicalKeyboardKey.enter ||
-          key == LogicalKeyboardKey.numpadEnter) {
-        if (_rfidBuffer.isNotEmpty && _rfidBuffer.length >= 8) {
-          // معالجة بطاقة RFID
-          final tagId = _rfidBuffer.trim();
-          debugPrint('📡 تم قراءة بطاقة RFID من لوحة المفاتيح: $tagId');
-          _handleRfidTag(tagId);
-          _rfidBuffer = '';
-          _rfidInputTimer?.cancel();
-        }
-        return;
-      }
-
-      // إضافة الحرف إلى الbuffer
-      final character = event.character;
-      if (character != null && character.isNotEmpty) {
-        final sanitized = _sanitizeRfidInput(character);
-        if (sanitized.isEmpty) return;
-        _rfidBuffer += sanitized;
-
-        // إعادة تعيين مؤقت مسح الbuffer
+    if (event is! KeyDownEvent) return;
+    final primary = FocusManager.instance.primaryFocus;
+    if (primary != null && primary.context?.widget is EditableText) return;
+    final key = event.logicalKey;
+    if (key == LogicalKeyboardKey.enter ||
+        key == LogicalKeyboardKey.numpadEnter) {
+      if (_rfidBuffer.isNotEmpty && _rfidBuffer.length >= 8) {
+        final tag = _rfidBuffer.trim();
+        _rfidBuffer = '';
         _rfidInputTimer?.cancel();
-        _rfidInputTimer = Timer(const Duration(milliseconds: 500), () {
-          if (_rfidBuffer.length < 8) {
-            _rfidBuffer = ''; // مسح إذا لم يكتمل في الوقت المحدد
-          }
-        });
+        _handleRfidTag(tag);
       }
+      return;
     }
+    if (key == LogicalKeyboardKey.shiftLeft ||
+        key == LogicalKeyboardKey.shiftRight ||
+        key == LogicalKeyboardKey.controlLeft ||
+        key == LogicalKeyboardKey.controlRight ||
+        key == LogicalKeyboardKey.altLeft ||
+        key == LogicalKeyboardKey.altRight) {
+      return;
+    }
+    final ch = event.character;
+    if (ch == null || ch.isEmpty || ch == '\n' || ch == '\r') return;
+    final cleaned = ch
+        .replaceAll(RegExp(r'[\u0610-\u061A\u064B-\u065F\u06D6-\u06ED]'), '')
+        .trim();
+    if (cleaned.isEmpty) return;
+    final hexOnly = cleaned.replaceAll(RegExp(r'[^0-9A-Fa-f]'), '');
+    if (hexOnly.isEmpty) return;
+    _rfidBuffer += hexOnly.toUpperCase();
+    _rfidInputTimer?.cancel();
+    _rfidInputTimer = Timer(const Duration(milliseconds: 500), () {
+      if (_rfidBuffer.length < 8) {
+        _rfidBuffer = '';
+      }
+    });
   }
 }

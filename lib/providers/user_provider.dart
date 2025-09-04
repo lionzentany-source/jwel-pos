@@ -16,10 +16,11 @@ final allUsersProvider = FutureProvider<List<User>>((ref) async {
 });
 
 // Manages the state of the currently authenticated user.
-final userNotifierProvider = StateNotifierProvider<UserNotifier, AsyncValue<User?>>((ref) {
-  final userService = ref.read(userServiceProvider);
-  return UserNotifier(userService);
-});
+final userNotifierProvider =
+    StateNotifierProvider<UserNotifier, AsyncValue<User?>>((ref) {
+      final userService = ref.read(userServiceProvider);
+      return UserNotifier(userService);
+    });
 
 class UserNotifier extends StateNotifier<AsyncValue<User?>> {
   UserNotifier(this._userService) : super(const AsyncValue.data(null));
@@ -33,16 +34,21 @@ class UserNotifier extends StateNotifier<AsyncValue<User?>> {
     try {
       final user = await _userService.authenticate(username, password);
       if (user != null) {
-        debugPrint("--- UserNotifier: Authentication successful for '$username' ---");
+        debugPrint(
+          "--- UserNotifier: Authentication successful for '$username' ---",
+        );
         state = AsyncValue.data(user);
         return true;
       } else {
-        debugPrint("--- UserNotifier: Authentication failed for '$username' ---");
-        state = const AsyncValue.data(null); // Reset to initial state on failure
+        debugPrint(
+          "--- UserNotifier: Authentication failed for '$username' ---",
+        );
+        state = const AsyncValue.data(
+          null,
+        ); // Reset to initial state on failure
         return false;
       }
     } catch (error, stackTrace) {
-      
       state = AsyncValue.error(error, stackTrace);
       return false;
     }
@@ -65,5 +71,25 @@ class UserNotifier extends StateNotifier<AsyncValue<User?>> {
   /// Checks if the current user has a specific permission.
   bool hasPermission(String permission) {
     return _userService.hasPermission(permission);
+  }
+
+  /// Creates the first admin user (no permission check).
+  Future<void> createAdminUser({
+    required String username,
+    required String password,
+    required String fullName,
+  }) async {
+    try {
+      // bypass permission check for first user
+      await _userService.createUser(
+        username: username,
+        password: password,
+        fullName: fullName,
+        role: UserRole.admin,
+      );
+    } catch (e) {
+      debugPrint('Error creating admin user: $e');
+      rethrow;
+    }
   }
 }

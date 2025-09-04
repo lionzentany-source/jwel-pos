@@ -1,6 +1,8 @@
 import 'package:flutter/cupertino.dart';
+import 'package:flutter/material.dart' as m;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../widgets/adaptive_scaffold.dart';
+import '../widgets/app_button.dart';
 import '../providers/rfid_provider.dart';
 import '../services/rfid_service.dart';
 import '../services/rfid_settings_storage.dart';
@@ -112,27 +114,31 @@ class _RfidSettingsScreenState extends ConsumerState<RfidSettingsScreen> {
       }
     });
 
-    return AdaptiveScaffold(
-      title: 'إعدادات RFID',
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            _buildConnectionSection(rfidStatus),
-            const SizedBox(height: 20),
-            _buildPortSettings(),
-            const SizedBox(height: 20),
-            _buildPowerSettings(),
-            const SizedBox(height: 20),
-            _buildFrequencySettings(),
-            const SizedBox(height: 20),
-            _buildAdvancedSettings(),
-            const SizedBox(height: 20),
-            _buildScanSettings(),
-            const SizedBox(height: 20),
-            _buildTestSection(rfidStatus),
-          ],
+    return Container(
+      color: const Color(0xFFF6F8FA),
+      child: AdaptiveScaffold(
+        title: 'إعدادات RFID',
+        showBackButton: true,
+        body: SingleChildScrollView(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              _buildConnectionSection(rfidStatus),
+              const SizedBox(height: 20),
+              _buildPortSettings(),
+              const SizedBox(height: 20),
+              _buildPowerSettings(),
+              const SizedBox(height: 20),
+              _buildFrequencySettings(),
+              const SizedBox(height: 20),
+              _buildAdvancedSettings(),
+              const SizedBox(height: 20),
+              _buildScanSettings(),
+              const SizedBox(height: 20),
+              _buildTestSection(rfidStatus),
+            ],
+          ),
         ),
       ),
     );
@@ -147,11 +153,11 @@ class _RfidSettingsScreenState extends ConsumerState<RfidSettingsScreen> {
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: CupertinoColors.systemBackground,
+        color: m.Colors.white,
         borderRadius: BorderRadius.circular(12),
         boxShadow: [
           BoxShadow(
-            color: CupertinoColors.systemGrey.withValues(alpha: 0.1),
+            color: m.Colors.black.withAlpha(15),
             blurRadius: 8,
             offset: const Offset(0, 2),
           ),
@@ -192,10 +198,9 @@ class _RfidSettingsScreenState extends ConsumerState<RfidSettingsScreen> {
               if (rfidStatus.isLoading)
                 const CupertinoActivityIndicator()
               else
-                CupertinoButton(
-                  padding: EdgeInsets.zero,
+                AppButton.primary(
+                  text: isConnected ? 'قطع الاتصال' : 'اتصال',
                   onPressed: isConnected ? _disconnect : _connect,
-                  child: Text(isConnected ? 'قطع الاتصال' : 'اتصال'),
                 ),
             ],
           ),
@@ -218,11 +223,11 @@ class _RfidSettingsScreenState extends ConsumerState<RfidSettingsScreen> {
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: CupertinoColors.systemBackground,
+        color: m.Colors.white,
         borderRadius: BorderRadius.circular(12),
         boxShadow: [
           BoxShadow(
-            color: CupertinoColors.systemGrey.withValues(alpha: 0.1),
+            color: m.Colors.black.withAlpha(15),
             blurRadius: 8,
             offset: const Offset(0, 2),
           ),
@@ -290,13 +295,10 @@ class _RfidSettingsScreenState extends ConsumerState<RfidSettingsScreen> {
                         ),
                 ),
                 const SizedBox(width: 8),
-                CupertinoButton(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 12,
-                    vertical: 6,
-                  ),
+                AppButton.secondary(
+                  text: 'تحديث',
                   onPressed: _refreshPorts,
-                  child: const Text('تحديث', style: TextStyle(fontSize: 12)),
+                  height: 36,
                 ),
               ],
             ),
@@ -373,11 +375,11 @@ class _RfidSettingsScreenState extends ConsumerState<RfidSettingsScreen> {
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: CupertinoColors.systemBackground,
+        color: m.Colors.white,
         borderRadius: BorderRadius.circular(12),
         boxShadow: [
           BoxShadow(
-            color: CupertinoColors.systemGrey.withValues(alpha: 0.1),
+            color: m.Colors.black.withAlpha(15),
             blurRadius: 8,
             offset: const Offset(0, 2),
           ),
@@ -450,11 +452,11 @@ class _RfidSettingsScreenState extends ConsumerState<RfidSettingsScreen> {
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: CupertinoColors.systemBackground,
+        color: m.Colors.white,
         borderRadius: BorderRadius.circular(12),
         boxShadow: [
           BoxShadow(
-            color: CupertinoColors.systemGrey.withValues(alpha: 0.1),
+            color: m.Colors.black.withAlpha(15),
             blurRadius: 8,
             offset: const Offset(0, 2),
           ),
@@ -547,11 +549,11 @@ class _RfidSettingsScreenState extends ConsumerState<RfidSettingsScreen> {
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: CupertinoColors.systemBackground,
+        color: m.Colors.white,
         borderRadius: BorderRadius.circular(12),
         boxShadow: [
           BoxShadow(
-            color: CupertinoColors.systemGrey.withValues(alpha: 0.1),
+            color: m.Colors.black.withAlpha(15),
             blurRadius: 8,
             offset: const Offset(0, 2),
           ),
@@ -593,11 +595,11 @@ class _RfidSettingsScreenState extends ConsumerState<RfidSettingsScreen> {
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: CupertinoColors.systemBackground,
+        color: m.Colors.white,
         borderRadius: BorderRadius.circular(12),
         boxShadow: [
           BoxShadow(
-            color: CupertinoColors.systemGrey.withValues(alpha: 0.1),
+            color: m.Colors.black.withAlpha(15),
             blurRadius: 8,
             offset: const Offset(0, 2),
           ),
@@ -666,11 +668,11 @@ class _RfidSettingsScreenState extends ConsumerState<RfidSettingsScreen> {
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: CupertinoColors.systemBackground,
+        color: m.Colors.white,
         borderRadius: BorderRadius.circular(12),
         boxShadow: [
           BoxShadow(
-            color: CupertinoColors.systemGrey.withValues(alpha: 0.1),
+            color: m.Colors.black.withAlpha(15),
             blurRadius: 8,
             offset: const Offset(0, 2),
           ),
@@ -687,17 +689,16 @@ class _RfidSettingsScreenState extends ConsumerState<RfidSettingsScreen> {
           Row(
             children: [
               Expanded(
-                child: CupertinoButton.filled(
+                child: AppButton.primary(
+                  text: 'اختبار قراءة',
                   onPressed: isConnected ? _testRead : null,
-                  child: const Text('اختبار قراءة'),
                 ),
               ),
               const SizedBox(width: 8),
               Expanded(
-                child: CupertinoButton(
-                  color: CupertinoColors.systemOrange,
+                child: AppButton.secondary(
+                  text: 'اختبار الصوت',
                   onPressed: isConnected ? _testBeep : null,
-                  child: const Text('اختبار الصوت'),
                 ),
               ),
             ],
@@ -706,24 +707,16 @@ class _RfidSettingsScreenState extends ConsumerState<RfidSettingsScreen> {
           Row(
             children: [
               Expanded(
-                child: CupertinoButton(
-                  color: CupertinoColors.systemPurple,
+                child: AppButton.secondary(
+                  text: 'معلومات الجهاز',
                   onPressed: isConnected ? _getDeviceInfo : null,
-                  child: const Text(
-                    'معلومات الجهاز',
-                    style: TextStyle(fontSize: 12),
-                  ),
                 ),
               ),
               const SizedBox(width: 8),
               Expanded(
-                child: CupertinoButton(
-                  color: CupertinoColors.systemRed,
+                child: AppButton.destructive(
+                  text: 'إعادة تهيئة',
                   onPressed: isConnected ? _initializeDevice : null,
-                  child: const Text(
-                    'إعادة تهيئة',
-                    style: TextStyle(fontSize: 12),
-                  ),
                 ),
               ),
             ],
@@ -731,10 +724,9 @@ class _RfidSettingsScreenState extends ConsumerState<RfidSettingsScreen> {
           const SizedBox(height: 12),
           SizedBox(
             width: double.infinity,
-            child: CupertinoButton(
-              color: CupertinoColors.systemGrey,
+            child: AppButton.primary(
+              text: 'حفظ الإعدادات',
               onPressed: _saveSettings,
-              child: const Text('حفظ الإعدادات'),
             ),
           ),
         ],

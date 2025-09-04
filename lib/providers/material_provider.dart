@@ -16,7 +16,10 @@ final variableMaterialsProvider = FutureProvider<List<Material>>((ref) async {
   return await repository.getVariableMaterials();
 });
 
-final materialByIdProvider = FutureProvider.family<Material?, int>((ref, id) async {
+final materialByIdProvider = FutureProvider.family<Material?, int>((
+  ref,
+  id,
+) async {
   final repository = ref.read(materialRepositoryProvider);
   return await repository.getMaterialById(id);
 });
@@ -75,7 +78,8 @@ class MaterialNotifier extends StateNotifier<AsyncValue<List<Material>>> {
   }
 }
 
-final materialNotifierProvider = StateNotifierProvider<MaterialNotifier, AsyncValue<List<Material>>>((ref) {
-  final repository = ref.read(materialRepositoryProvider);
-  return MaterialNotifier(repository);
-});
+final materialNotifierProvider =
+    StateNotifierProvider<MaterialNotifier, AsyncValue<List<Material>>>((ref) {
+      final repository = ref.read(materialRepositoryProvider);
+      return MaterialNotifier(repository);
+    });

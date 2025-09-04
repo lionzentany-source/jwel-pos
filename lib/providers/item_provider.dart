@@ -11,12 +11,25 @@ final itemsProvider = FutureProvider<List<Item>>((ref) async {
   return await repository.getAllItems();
 });
 
-final itemsByStatusProvider = FutureProvider.family<List<Item>, ItemStatus>((ref, status) async {
+final itemsByLocationProvider = FutureProvider.family<List<Item>, ItemLocation>(
+  (ref, location) async {
+    final repository = ref.read(itemRepositoryProvider);
+    return await repository.getAllItems(location: location);
+  },
+);
+
+final itemsByStatusProvider = FutureProvider.family<List<Item>, ItemStatus>((
+  ref,
+  status,
+) async {
   final repository = ref.read(itemRepositoryProvider);
   return await repository.getItemsByStatus(status.name);
 });
 
-final itemByCategoryProvider = FutureProvider.family<List<Item>, int>((ref, categoryId) async {
+final itemByCategoryProvider = FutureProvider.family<List<Item>, int>((
+  ref,
+  categoryId,
+) async {
   final repository = ref.read(itemRepositoryProvider);
   return await repository.getItemsByCategoryId(categoryId);
 });
@@ -93,7 +106,8 @@ class ItemNotifier extends StateNotifier<AsyncValue<List<Item>>> {
   }
 }
 
-final itemNotifierProvider = StateNotifierProvider<ItemNotifier, AsyncValue<List<Item>>>((ref) {
-  final repository = ref.read(itemRepositoryProvider);
-  return ItemNotifier(repository);
-});
+final itemNotifierProvider =
+    StateNotifierProvider<ItemNotifier, AsyncValue<List<Item>>>((ref) {
+      final repository = ref.read(itemRepositoryProvider);
+      return ItemNotifier(repository);
+    });

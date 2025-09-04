@@ -1,10 +1,9 @@
-import 'package:flutter/cupertino.dart';
+import 'package:fluent_ui/fluent_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../widgets/adaptive_scaffold.dart';
-import '../models/material.dart';
+import '../models/material.dart' as local;
 import '../providers/material_provider.dart';
-import '../widgets/app_loading_error_widget.dart';
+import '../widgets/adaptive_scaffold.dart';
 
 class ManageMaterialsScreen extends ConsumerStatefulWidget {
   const ManageMaterialsScreen({super.key});
@@ -18,56 +17,61 @@ class _ManageMaterialsScreenState extends ConsumerState<ManageMaterialsScreen> {
   @override
   Widget build(BuildContext context) {
     final materialsAsync = ref.watch(materialNotifierProvider);
+    final theme = FluentTheme.of(context);
 
     return AdaptiveScaffold(
+      backgroundColor: theme.scaffoldBackgroundColor,
       title: 'إدارة المواد الخام',
-      actions: [
-        CupertinoButton(
-          padding: EdgeInsets.zero,
-          onPressed: () => _showAddMaterialDialog(),
-          child: const Icon(CupertinoIcons.add),
+      // لا يوجد زر رجوع في الأعلى
+      commandBarItems: [
+        CommandBarButton(
+          icon: const Icon(FluentIcons.add, size: 20),
+          label: const Text(
+            'إضافة',
+            style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+          ),
+          onPressed: _showAddMaterialDialog,
         ),
       ],
+      showBackButton: false,
       body: GestureDetector(
         onTap: () {
           FocusScope.of(context).unfocus();
         },
         child: materialsAsync.when(
           data: (materials) => _buildMaterialsList(materials),
-          loading: () => const Center(child: CupertinoActivityIndicator()),
-          error: (error, stack) => AppLoadingErrorWidget(
-            title: 'خطأ في تحميل المواد الخام',
-            message: error.toString(),
-            onRetry: () => ref.refresh(materialNotifierProvider),
+          loading: () =>
+              Center(child: ProgressRing(activeColor: theme.accentColor)),
+          error: (error, stack) => Center(
+            child: Text(
+              'خطأ في تحميل المواد الخام: $error',
+              style: TextStyle(color: Colors.red),
+            ),
           ),
         ),
       ),
     );
   }
 
-  Widget _buildMaterialsList(List<Material> materials) {
+  Widget _buildMaterialsList(List<local.Material> materials) {
+    final theme = FluentTheme.of(context);
     if (materials.isEmpty) {
       return Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            const Icon(
-              CupertinoIcons.cube,
+            Icon(
+              FluentIcons.folder_open,
               size: 80,
-              color: CupertinoColors.systemGrey3,
+              color: theme.accentColor.lighter,
             ),
             const SizedBox(height: 16),
-            const Text(
-              'لا توجد مواد خام',
-              style: TextStyle(
-                fontSize: 18,
-                color: CupertinoColors.secondaryLabel,
-              ),
-            ),
+            const Text('لا توجد مواد خام', style: TextStyle(fontSize: 18)),
             const SizedBox(height: 24),
-            CupertinoButton.filled(
-              onPressed: () => _showAddMaterialDialog(),
-              child: const Text('إضافة مادة جديدة'),
+            AdaptiveButton(
+              text: 'إضافة مادة جديدة',
+              onPressed: _showAddMaterialDialog,
+              icon: FluentIcons.add,
             ),
           ],
         ),
@@ -84,99 +88,81 @@ class _ManageMaterialsScreenState extends ConsumerState<ManageMaterialsScreen> {
     );
   }
 
-  Widget _buildMaterialCard(Material material) {
-    return Container(
-      margin: const EdgeInsets.only(bottom: 12),
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: CupertinoColors.systemBackground,
-        borderRadius: BorderRadius.circular(12),
-        boxShadow: [
-          BoxShadow(
-            color: CupertinoColors.systemGrey.withValues(alpha: 0.1),
-            blurRadius: 8,
-            offset: const Offset(0, 2),
-          ),
-        ],
-      ),
+  Widget _buildMaterialCard(local.Material material) {
+    final theme = FluentTheme.of(context);
+    return AdaptiveCard(
+      onTap: () => _showEditMaterialDialog(material),
       child: Row(
         children: [
           Container(
             width: 50,
             height: 50,
             decoration: BoxDecoration(
-              color: _getMaterialColor(material.nameAr).withValues(alpha: 0.1),
-              borderRadius: BorderRadius.circular(25),
+              color: theme.accentColor.lighter.withAlpha(51),
+              borderRadius: BorderRadius.circular(8),
             ),
-            child: Icon(
-              CupertinoIcons.cube,
-              color: _getMaterialColor(material.nameAr),
-            ),
+            child: Icon(FluentIcons.product, color: theme.accentColor),
           ),
           const SizedBox(width: 16),
           Expanded(
-            child: Text(
+            child: AdaptiveText(
               material.nameAr,
               style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
             ),
           ),
-          CupertinoButton(
-            padding: EdgeInsets.zero,
+          const SizedBox(width: 16),
+          if (material.isVariable)
+            AdaptiveText(
+              '${material.pricePerGram} / جرام',
+              style: TextStyle(
+                fontSize: 14,
+                color: theme.typography.body?.color?.withAlpha(179),
+              ),
+            ),
+          const Spacer(),
+          AdaptiveButton(
+            text: 'تعديل',
             onPressed: () => _showEditMaterialDialog(material),
-            child: const Icon(
-              CupertinoIcons.pencil,
-              color: CupertinoColors.activeBlue,
-            ),
+            icon: FluentIcons.edit,
           ),
-          CupertinoButton(
-            padding: EdgeInsets.zero,
+          const SizedBox(width: 8),
+          AdaptiveButton(
+            text: 'حذف',
             onPressed: () => _showDeleteConfirmation(material),
-            child: const Icon(
-              CupertinoIcons.trash,
-              color: CupertinoColors.systemRed,
-            ),
+            isDestructive: true,
+            icon: FluentIcons.delete,
           ),
         ],
       ),
     );
   }
 
-  Color _getMaterialColor(String materialName) {
-    switch (materialName.toLowerCase()) {
-      case 'ذهب':
-        return CupertinoColors.systemYellow;
-      case 'فضة':
-        return CupertinoColors.systemGrey;
-      case 'بلاتين':
-        return CupertinoColors.systemGrey2;
-      default:
-        return CupertinoColors.activeBlue;
-    }
-  }
-
   void _showAddMaterialDialog() {
     final nameController = TextEditingController();
-  final priceController = TextEditingController();
-  bool isVariable = false;
+    final priceController = TextEditingController();
+    bool isVariable = false;
 
-    showCupertinoDialog(
+    showDialog(
       context: context,
       builder: (context) => StatefulBuilder(
-        builder: (ctx, setStateSB) => CupertinoAlertDialog(
+        builder: (ctx, setStateSB) => ContentDialog(
           title: const Text('إضافة مادة خام جديدة'),
           content: Column(
+            mainAxisSize: MainAxisSize.min,
             children: [
               const SizedBox(height: 12),
-              CupertinoTextField(
+              TextBox(
                 controller: nameController,
                 placeholder: 'اسم المادة الخام',
               ),
               const SizedBox(height: 12),
               Row(
                 children: [
-                  const Expanded(child: Text('سعر متغير؟', style: TextStyle(fontSize: 14))),
-                  CupertinoSwitch(
-                    value: isVariable,
+                  const Expanded(
+                    child: Text('سعر متغير؟', style: TextStyle(fontSize: 14)),
+                  ),
+                  ToggleSwitch(
+                    checked: isVariable,
                     onChanged: (v) => setStateSB(() {
                       isVariable = v;
                     }),
@@ -185,30 +171,36 @@ class _ManageMaterialsScreenState extends ConsumerState<ManageMaterialsScreen> {
               ),
               if (isVariable) ...[
                 const SizedBox(height: 8),
-                CupertinoTextField(
+                TextBox(
                   controller: priceController,
                   placeholder: 'سعر الجرام',
-                  keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                  keyboardType: const TextInputType.numberWithOptions(
+                    decimal: true,
+                  ),
                 ),
               ],
             ],
           ),
           actions: [
-            CupertinoDialogAction(
+            Button(
               child: const Text('إلغاء'),
               onPressed: () => Navigator.pop(context),
             ),
-            CupertinoDialogAction(
+            FilledButton(
               onPressed: () async {
                 if (nameController.text.isNotEmpty) {
                   final navigator = Navigator.of(context);
                   try {
-                    final material = Material(
+                    final material = local.Material(
                       nameAr: nameController.text,
                       isVariable: isVariable,
-                      pricePerGram: isVariable ? double.tryParse(priceController.text) ?? 0 : 0,
+                      pricePerGram: isVariable
+                          ? double.tryParse(priceController.text) ?? 0
+                          : 0,
                     );
-                    await ref.read(materialNotifierProvider.notifier).addMaterial(material);
+                    await ref
+                        .read(materialNotifierProvider.notifier)
+                        .addMaterial(material);
                     navigator.pop();
                     _showSuccessMessage('تم إضافة المادة بنجاح');
                   } catch (error) {
@@ -224,31 +216,34 @@ class _ManageMaterialsScreenState extends ConsumerState<ManageMaterialsScreen> {
     );
   }
 
-  void _showEditMaterialDialog(Material material) {
+  void _showEditMaterialDialog(local.Material material) {
     final nameController = TextEditingController(text: material.nameAr);
     final priceController = TextEditingController(
       text: material.isVariable ? material.pricePerGram.toString() : '',
     );
     bool isVariable = material.isVariable;
 
-    showCupertinoDialog(
+    showDialog(
       context: context,
       builder: (context) => StatefulBuilder(
-        builder: (ctx, setStateSB) => CupertinoAlertDialog(
+        builder: (ctx, setStateSB) => ContentDialog(
           title: const Text('تعديل المادة'),
           content: Column(
+            mainAxisSize: MainAxisSize.min,
             children: [
               const SizedBox(height: 12),
-              CupertinoTextField(
+              TextBox(
                 controller: nameController,
                 placeholder: 'اسم المادة الخام',
               ),
               const SizedBox(height: 12),
               Row(
                 children: [
-                  const Expanded(child: Text('سعر متغير؟', style: TextStyle(fontSize: 14))),
-                  CupertinoSwitch(
-                    value: isVariable,
+                  const Expanded(
+                    child: Text('سعر متغير؟', style: TextStyle(fontSize: 14)),
+                  ),
+                  ToggleSwitch(
+                    checked: isVariable,
                     onChanged: (v) => setStateSB(() {
                       isVariable = v;
                     }),
@@ -257,20 +252,22 @@ class _ManageMaterialsScreenState extends ConsumerState<ManageMaterialsScreen> {
               ),
               if (isVariable) ...[
                 const SizedBox(height: 8),
-                CupertinoTextField(
+                TextBox(
                   controller: priceController,
                   placeholder: 'سعر الجرام',
-                  keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                  keyboardType: const TextInputType.numberWithOptions(
+                    decimal: true,
+                  ),
                 ),
               ],
             ],
           ),
           actions: [
-            CupertinoDialogAction(
+            Button(
               child: const Text('إلغاء'),
               onPressed: () => Navigator.pop(context),
             ),
-            CupertinoDialogAction(
+            FilledButton(
               onPressed: () async {
                 if (nameController.text.isNotEmpty) {
                   final navigator = Navigator.of(context);
@@ -278,9 +275,14 @@ class _ManageMaterialsScreenState extends ConsumerState<ManageMaterialsScreen> {
                     final updatedMaterial = material.copyWith(
                       nameAr: nameController.text,
                       isVariable: isVariable,
-                      pricePerGram: isVariable ? double.tryParse(priceController.text) ?? material.pricePerGram : 0,
+                      pricePerGram: isVariable
+                          ? double.tryParse(priceController.text) ??
+                                material.pricePerGram
+                          : 0,
                     );
-                    await ref.read(materialNotifierProvider.notifier).updateMaterial(updatedMaterial);
+                    await ref
+                        .read(materialNotifierProvider.notifier)
+                        .updateMaterial(updatedMaterial);
                     navigator.pop();
                     _showSuccessMessage('تم تحديث المادة بنجاح');
                   } catch (error) {
@@ -296,19 +298,20 @@ class _ManageMaterialsScreenState extends ConsumerState<ManageMaterialsScreen> {
     );
   }
 
-  void _showDeleteConfirmation(Material material) {
-    showCupertinoDialog(
+  void _showDeleteConfirmation(local.Material material) {
+    showDialog(
       context: context,
-      builder: (context) => CupertinoAlertDialog(
+      builder: (context) => ContentDialog(
         title: const Text('حذف المادة'),
         content: Text('هل أنت متأكد من حذف مادة "${material.nameAr}"؟'),
         actions: [
-          CupertinoDialogAction(
+          Button(
             child: const Text('إلغاء'),
             onPressed: () => Navigator.pop(context),
           ),
-          CupertinoDialogAction(
-            isDestructiveAction: true,
+          AdaptiveButton(
+            text: 'حذف',
+            isDestructive: true,
             onPressed: () async {
               final navigator = Navigator.of(context);
               try {
@@ -322,7 +325,6 @@ class _ManageMaterialsScreenState extends ConsumerState<ManageMaterialsScreen> {
                 _showErrorMessage('خطأ في حذف المادة: $error');
               }
             },
-            child: const Text('حذف'),
           ),
         ],
       ),
@@ -330,13 +332,13 @@ class _ManageMaterialsScreenState extends ConsumerState<ManageMaterialsScreen> {
   }
 
   void _showSuccessMessage(String message) {
-    showCupertinoDialog(
+    showDialog(
       context: context,
-      builder: (context) => CupertinoAlertDialog(
+      builder: (context) => ContentDialog(
         title: const Text('تم بنجاح'),
         content: Text(message),
         actions: [
-          CupertinoDialogAction(
+          Button(
             child: const Text('موافق'),
             onPressed: () => Navigator.pop(context),
           ),
@@ -346,13 +348,13 @@ class _ManageMaterialsScreenState extends ConsumerState<ManageMaterialsScreen> {
   }
 
   void _showErrorMessage(String message) {
-    showCupertinoDialog(
+    showDialog(
       context: context,
-      builder: (context) => CupertinoAlertDialog(
+      builder: (context) => ContentDialog(
         title: const Text('خطأ'),
         content: Text(message),
         actions: [
-          CupertinoDialogAction(
+          Button(
             child: const Text('موافق'),
             onPressed: () => Navigator.pop(context),
           ),

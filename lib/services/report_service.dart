@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:io';
+import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:path/path.dart' as path;
@@ -10,6 +11,8 @@ import 'package:excel/excel.dart';
 import '../models/invoice.dart';
 import '../models/item.dart';
 import '../models/customer.dart';
+import '../repositories/material_repository.dart';
+import '../models/material.dart' as app_mat;
 
 /// # Report Service Implementation
 ///
@@ -145,6 +148,8 @@ class ReportService {
   Future<String> exportInventoryReportToPDF({
     required List<Item> items,
     String? fileName,
+    ItemLocation? filterLocation,
+    bool groupByLocation = false,
   }) async {
     try {
       debugPrint("--- EXPORTING INVENTORY REPORT TO PDF ---");
@@ -152,12 +157,24 @@ class ReportService {
       // Create PDF document
       final pdf = pw.Document();
 
+      // Preload materials for price calculation
+      final materials = await MaterialRepository().getAllMaterials();
+      final Map<int, app_mat.Material> materialsById = {
+        for (final m in materials)
+          if (m.id != null) m.id!: m,
+      };
+
+      // Apply optional location filter
+      final filteredItems = filterLocation == null
+          ? items
+          : items.where((i) => i.location == filterLocation).toList();
+
       // Calculate inventory statistics
-      final totalItems = items.length;
-      final inStockItems = items
+      final totalItems = filteredItems.length;
+      final inStockItems = filteredItems
           .where((item) => item.status == ItemStatus.inStock)
           .length;
-      final soldItems = items
+      final soldItems = filteredItems
           .where((item) => item.status == ItemStatus.sold)
           .length;
 
@@ -184,6 +201,12 @@ class ReportService {
                   'تاريخ التقرير: ${_formatDate(DateTime.now())}',
                   style: pw.TextStyle(fontSize: 16),
                 ),
+
+                if (filterLocation != null)
+                  pw.Text(
+                    'نطاق المكان: ${filterLocation.displayName}',
+                    style: pw.TextStyle(fontSize: 12, color: PdfColors.grey600),
+                  ),
 
                 pw.SizedBox(height: 20),
 
@@ -214,31 +237,96 @@ class ReportService {
 
                 pw.SizedBox(height: 20),
 
-                // Items table
-                pw.Text(
-                  'تفاصيل الأصناف:',
-                  style: pw.TextStyle(fontWeight: pw.FontWeight.bold),
-                ),
-                pw.SizedBox(height: 10),
-
-                pw.TableHelper.fromTextArray(
-                  headers: ['رمز الصنف', 'الوزن', 'العيار', 'الحالة', 'السعر'],
-                  data: items
-                      .map(
-                        (item) => [
-                          item.sku,
-                          '${item.weightGrams}g',
-                          '${item.karat}K',
-                          item.status.displayName,
-                          '${_calculateItemPrice(item).toStringAsFixed(2)} د.ل',
-                        ],
+                if (!groupByLocation) ...[
+                  pw.Text(
+                    'تفاصيل الأصناف:',
+                    style: pw.TextStyle(fontWeight: pw.FontWeight.bold),
+                  ),
+                  pw.SizedBox(height: 10),
+                  pw.TableHelper.fromTextArray(
+                    headers: [
+                      'رمز الصنف',
+                      'الوزن',
+                      'العيار',
+                      'الحالة',
+                      'المكان',
+                      'السعر',
+                    ],
+                    data: filteredItems
+                        .map(
+                          (item) => [
+                            item.sku,
+                            '${item.weightGrams}g',
+                            '${item.karat}K',
+                            item.status.displayName,
+                            item.location.displayName,
+                            '${_calculateItemPrice(item, materialsById).toStringAsFixed(2)} د.ل',
+                          ],
+                        )
+                        .toList(),
+                    headerStyle: pw.TextStyle(fontWeight: pw.FontWeight.bold),
+                    headerDecoration: pw.BoxDecoration(
+                      color: PdfColors.grey300,
+                    ),
+                    cellAlignment: pw.Alignment.centerRight,
+                    cellStyle: pw.TextStyle(fontSize: 10),
+                  ),
+                ] else ...[
+                  // Group by location sections
+                  ...[ItemLocation.warehouse, ItemLocation.showroom]
+                      .where(
+                        (loc) =>
+                            filterLocation == null || loc == filterLocation,
                       )
-                      .toList(),
-                  headerStyle: pw.TextStyle(fontWeight: pw.FontWeight.bold),
-                  headerDecoration: pw.BoxDecoration(color: PdfColors.grey300),
-                  cellAlignment: pw.Alignment.centerRight,
-                  cellStyle: pw.TextStyle(fontSize: 10),
-                ),
+                      .map((loc) {
+                        final locItems = filteredItems
+                            .where((i) => i.location == loc)
+                            .toList();
+                        if (locItems.isEmpty) return pw.SizedBox();
+                        return pw.Column(
+                          crossAxisAlignment: pw.CrossAxisAlignment.stretch,
+                          children: [
+                            pw.SizedBox(height: 16),
+                            pw.Text(
+                              'المكان: ${loc.displayName} (${locItems.length})',
+                              style: pw.TextStyle(
+                                fontWeight: pw.FontWeight.bold,
+                                fontSize: 14,
+                              ),
+                            ),
+                            pw.SizedBox(height: 8),
+                            pw.TableHelper.fromTextArray(
+                              headers: [
+                                'رمز الصنف',
+                                'الوزن',
+                                'العيار',
+                                'الحالة',
+                                'السعر',
+                              ],
+                              data: locItems
+                                  .map(
+                                    (item) => [
+                                      item.sku,
+                                      '${item.weightGrams}g',
+                                      '${item.karat}K',
+                                      item.status.displayName,
+                                      '${_calculateItemPrice(item, materialsById).toStringAsFixed(2)} د.ل',
+                                    ],
+                                  )
+                                  .toList(),
+                              headerStyle: pw.TextStyle(
+                                fontWeight: pw.FontWeight.bold,
+                              ),
+                              headerDecoration: pw.BoxDecoration(
+                                color: PdfColors.grey300,
+                              ),
+                              cellAlignment: pw.Alignment.centerRight,
+                              cellStyle: pw.TextStyle(fontSize: 10),
+                            ),
+                          ],
+                        );
+                      }),
+                ],
               ],
             );
           },
@@ -259,6 +347,43 @@ class ReportService {
       return pdfFilePath;
     } catch (e) {
       debugPrint("Error exporting inventory report to PDF: $e");
+      rethrow;
+    }
+  }
+
+  /// Exports sales report to CSV
+  Future<String> exportSalesReportToCSV({
+    required List<Invoice> invoices,
+    required DateTime startDate,
+    required DateTime endDate,
+    String? fileName,
+  }) async {
+    try {
+      debugPrint("--- EXPORTING SALES REPORT TO CSV ---");
+
+      final exportDir = await _getExportDirectory();
+      final timestamp = DateTime.now().millisecondsSinceEpoch;
+      final name = fileName ?? 'sales_report_$timestamp';
+      final csvFileName = '$name.csv';
+      final csvFilePath = path.join(exportDir.path, csvFileName);
+
+      final sink = File(csvFilePath).openWrite(encoding: utf8);
+      // Header
+      sink.writeln('Invoice Number,Date,Customer,Total');
+      for (final invoice in invoices) {
+        final number = invoice.invoiceNumber.toString();
+        final date = _formatDate(invoice.createdAt);
+        final customer = invoice.customerId?.toString() ?? 'Cash';
+        final total = invoice.total.toStringAsFixed(2);
+        sink.writeln('"$number","$date","$customer","$total"');
+      }
+      await sink.flush();
+      await sink.close();
+
+      debugPrint("Sales report exported to CSV: $csvFilePath");
+      return csvFilePath;
+    } catch (e) {
+      debugPrint("Error exporting sales report to CSV: $e");
       rethrow;
     }
   }
@@ -397,12 +522,7 @@ class ReportService {
 
       // Add headers based on report type
       if (reportType == 'Sales Report') {
-        sheet.appendRow([
-          'Invoice Number',
-          'Date',
-          'Customer',
-          'Total',
-        ]);
+        sheet.appendRow(['Invoice Number', 'Date', 'Customer', 'Total']);
         for (final invoice in data.cast<Invoice>()) {
           sheet.appendRow([
             invoice.invoiceNumber,
@@ -412,11 +532,18 @@ class ReportService {
           ]);
         }
       } else if (reportType == 'Inventory Report') {
+        // Load materials for price calculation
+        final materials = await MaterialRepository().getAllMaterials();
+        final Map<int, app_mat.Material> materialsById = {
+          for (final m in materials)
+            if (m.id != null) m.id!: m,
+        };
         sheet.appendRow([
           'SKU',
           'Weight (g)',
           'Karat',
           'Status',
+          'Location',
           'Price',
         ]);
         for (final item in data.cast<Item>()) {
@@ -425,16 +552,12 @@ class ReportService {
             item.weightGrams,
             item.karat,
             item.status.displayName,
-            _calculateItemPrice(item).toStringAsFixed(2),
+            item.location.displayName,
+            _calculateItemPrice(item, materialsById).toStringAsFixed(2),
           ]);
         }
       } else if (reportType == 'Customer Report') {
-        sheet.appendRow([
-          'Name',
-          'Phone',
-          'Email',
-          'Status',
-        ]);
+        sheet.appendRow(['Name', 'Phone', 'Email', 'Status']);
         for (final customer in data.cast<Customer>()) {
           sheet.appendRow([
             customer.name,
@@ -453,7 +576,8 @@ class ReportService {
 
       final exportDir = await _getExportDirectory();
       final timestamp = DateTime.now().millisecondsSinceEpoch;
-      final name = fileName ?? '${reportType.replaceAll(' ', '_')}_report_$timestamp';
+      final name =
+          fileName ?? '${reportType.replaceAll(' ', '_')}_report_$timestamp';
       final excelFileName = '$name.xlsx';
       final excelFilePath = path.join(exportDir.path, excelFileName);
 
@@ -488,16 +612,16 @@ class ReportService {
     return '${date.day}/${date.month}/${date.year}';
   }
 
-  /// Calculates item price (placeholder implementation)
-  double _calculateItemPrice(Item item) {
-    // This is a simplified calculation
-    // In a real implementation, you would calculate based on:
-    // - Material price (gold/silver rate)
-    // - Weight
-    // - Karat
-    // - Workmanship fee
-    // - Stone price
-    return item.weightGrams * 50 + item.workmanshipFee + item.stonePrice;
+  /// Calculates item price using material price per gram when available
+  double _calculateItemPrice(
+    Item item,
+    Map<int, app_mat.Material> materialsById,
+  ) {
+    final material = materialsById[item.materialId];
+    final pricePerGram = (material != null && material.isVariable)
+        ? material.pricePerGram
+        : 0.0;
+    final materialPrice = item.weightGrams * pricePerGram;
+    return materialPrice + item.workmanshipFee + item.stonePrice;
   }
 }
-

@@ -37,6 +37,9 @@ dependencies:
   # Use with the CupertinoIcons class for iOS style icons.
   cupertino_icons: ^1.0.8
 
+  # Fluent Design System
+  fluent_ui: ^4.9.1
+
   # State management
   flutter_riverpod: ^2.4.9
 
@@ -64,11 +67,17 @@ dependencies:
   bluetooth_print_plus: ^2.4.6
   esc_pos_utils_plus: ^2.0.0
   shared_preferences: ^2.2.3
-  flutter_libserialport: ^0.4.0
+  flutter_libserialport: ^0.6.0
+  flutter_blue_plus: ^1.33.0
+  
+  # Charts
+  fl_chart: ^0.69.0
   
   # Real printing support
   printing: ^5.12.0
   win32: ^5.1.1
+  package_info_plus: ^8.0.0
+  collection: ^1.18.0
 
 dev_dependencies:
   flutter_test:
@@ -82,6 +91,9 @@ dev_dependencies:
   flutter_lints: ^5.0.0
   mockito: ^5.4.4
   build_runner: ^2.4.7
+  flutter_native_splash: ^2.4.0
+  flutter_launcher_icons: ^0.13.1
+  msix: ^3.16.0 # لتوليد حزمة MSIX (تحديث الإصدار إذا لزم)
 
 # For information on the generic Dart part of this file, see the
 # following page: https://dart.dev/tools/pub/pubspec
@@ -99,6 +111,51 @@ flutter:
     - assets/images/
     - assets/icons/
     - assets/fonts/
+
+# Splash screen configuration (run: flutter pub run flutter_native_splash:create)
+flutter_native_splash:
+  color: "#FFFFFF"
+  image: assets/images/475686060_122111624468716899_7070205537672805384_n.jpg
+  android: true
+  ios: true
+  web: true
+  windows: true
+  linux: true
+  fullscreen: true
+  android_12:
+    image: assets/images/475686060_122111624468716899_7070205537672805384_n.jpg
+    icon_background_color: "#FFFFFF"
+
+# App icon generation (run: flutter pub run flutter_launcher_icons)
+flutter_launcher_icons:
+  image_path: assets/images/475686060_122111624468716899_7070205537672805384_n.jpg
+  android: true
+  ios: true
+  web:
+    generate: true
+    image_path: assets/images/475686060_122111624468716899_7070205537672805384_n.jpg
+    background_color: "#FFFFFF"
+    theme_color: "#0175C2"
+  windows:
+    generate: true
+    image_path: assets/images/475686060_122111624468716899_7070205537672805384_n.jpg
+  macos:
+    generate: true
+    image_path: assets/images/475686060_122111624468716899_7070205537672805384_n.jpg
+
+# إعدادات توليد حزمة MSIX لنظام Windows
+msix_config:
+  display_name: "Jwe POS"
+  publisher_display_name: "JWE"
+  identity_name: com.jwe.pos
+  publisher: CN=JWE
+  msix_version: 1.0.0.0 # حدّثه ليتماشى مع version عند كل إصدار رئيسي
+  logo_path: assets/images/475686060_122111624468716899_7070205537672805384_n.jpg
+  architecture: x64
+  output_path: dist/msix
+  enable_at_startup: false
+  # certificate_path: certificates/jwe_pos.pfx  # أضف المسار عند توفر الشهادة
+  # certificate_password: ""                   # ضع كلمة المرور هنا أو مررها كمتغير بيئة
 
   # An image asset can refer to one or more resolution-specific "variants", see
   # https://flutter.dev/to/resolution-aware-images

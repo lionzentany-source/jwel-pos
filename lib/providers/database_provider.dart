@@ -81,6 +81,7 @@ class DatabaseService {
         phone TEXT,
         email TEXT,
         address TEXT,
+        is_active INTEGER NOT NULL DEFAULT 1,
         created_at TEXT NOT NULL
       )
     ''');

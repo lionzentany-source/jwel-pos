@@ -1,5 +1,6 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../services/rfid_service.dart';
+import '../services/rfid_session_coordinator.dart';
 
 final rfidServiceProvider = Provider<RfidServiceReal>((ref) {
   return RfidServiceReal();
@@ -32,8 +33,18 @@ class RfidNotifier extends StateNotifier<AsyncValue<RfidReaderStatus>> {
   }
 
   Future<void> startScanning() async {
+    // Guard: must be connected before scanning
+    if (_rfidService.currentStatus != RfidReaderStatus.connected) {
+      state = AsyncValue.error(
+        StateError('لا يمكن بدء المسح: القارئ غير متصل'),
+        StackTrace.current,
+      );
+      return;
+    }
     state = const AsyncValue.loading();
     try {
+      // Mark cashier active to suppress anti-theft gate alarms
+      RfidSessionCoordinator.instance.setCashierActive(true);
       await _rfidService.startScanning();
       state = AsyncValue.data(_rfidService.currentStatus);
     } catch (error, stackTrace) {
@@ -46,6 +57,8 @@ class RfidNotifier extends StateNotifier<AsyncValue<RfidReaderStatus>> {
     try {
       await _rfidService.stopScanning();
       state = AsyncValue.data(_rfidService.currentStatus);
+      // Release cashier active flag
+      RfidSessionCoordinator.instance.setCashierActive(false);
     } catch (error, stackTrace) {
       state = AsyncValue.error(error, stackTrace);
     }
@@ -75,6 +88,7 @@ class RfidNotifier extends StateNotifier<AsyncValue<RfidReaderStatus>> {
     try {
       await _rfidService.disconnect();
       state = AsyncValue.data(_rfidService.currentStatus);
+      RfidSessionCoordinator.instance.setCashierActive(false);
     } catch (error, stackTrace) {
       state = AsyncValue.error(error, stackTrace);
     }
@@ -102,6 +116,17 @@ class RfidNotifier extends StateNotifier<AsyncValue<RfidReaderStatus>> {
         endFreq: endFreq,
         singleFrequency: singleFrequency,
       );
+      state = AsyncValue.data(_rfidService.currentStatus);
+    } catch (error, stackTrace) {
+      state = AsyncValue.error(error, stackTrace);
+    }
+  }
+
+  /// Connect to a Bluetooth RFID reader by device id/name
+  Future<void> connectBluetooth(String deviceId) async {
+    state = const AsyncValue.loading();
+    try {
+      await _rfidService.connectToBluetoothReader(deviceId);
       state = AsyncValue.data(_rfidService.currentStatus);
     } catch (error, stackTrace) {
       state = AsyncValue.error(error, stackTrace);

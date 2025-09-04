@@ -27,19 +27,22 @@ class _PrintPreviewScreenState extends ConsumerState<PrintPreviewScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return AdaptiveScaffold(
-      title: 'معاينة الطباعة',
-      body: Row(
-        children: [
-          // جانب التحكم
-          Expanded(flex: 2, child: _buildControlPanel()),
+    return Container(
+      color: Color(0xfff6f8fa), // خلفية موحدة
+      child: AdaptiveScaffold(
+        title: 'معاينة الطباعة',
+        body: Row(
+          children: [
+            // جانب التحكم
+            Expanded(flex: 2, child: _buildControlPanel()),
 
-          // خط فاصل
-          Container(width: 1, color: CupertinoColors.separator),
+            // خط فاصل
+            Container(width: 1, color: Color(0xffe5e7eb)),
 
-          // جانب المعاينة
-          Expanded(flex: 3, child: _buildPreviewPanel()),
-        ],
+            // جانب المعاينة
+            Expanded(flex: 3, child: _buildPreviewPanel()),
+          ],
+        ),
       ),
     );
   }
@@ -127,22 +130,28 @@ class _PrintPreviewScreenState extends ConsumerState<PrintPreviewScreen> {
           const SizedBox(height: 20),
 
           Expanded(
-            child: Container(
-              width: double.infinity,
-              padding: const EdgeInsets.all(20),
-              decoration: BoxDecoration(
-                color: CupertinoColors.white,
-                border: Border.all(color: CupertinoColors.separator),
-                borderRadius: BorderRadius.circular(8),
-                boxShadow: [
-                  BoxShadow(
-                    color: CupertinoColors.black.withValues(alpha: 0.1),
-                    blurRadius: 10,
-                    offset: const Offset(0, 2),
-                  ),
-                ],
+            child: Center(
+              child: Container(
+                // محاكاة عرض ورق حراري 80mm (نحو 302px عند 96dpi تقريبياً)
+                width: 300,
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 14,
+                  vertical: 16,
+                ),
+                decoration: BoxDecoration(
+                  color: CupertinoColors.white,
+                  border: Border.all(color: CupertinoColors.separator),
+                  borderRadius: BorderRadius.circular(4),
+                  boxShadow: [
+                    BoxShadow(
+                      color: CupertinoColors.black.withValues(alpha: 0.08),
+                      blurRadius: 6,
+                      offset: const Offset(0, 2),
+                    ),
+                  ],
+                ),
+                child: _buildInvoicePreview(),
               ),
-              child: _buildInvoicePreview(),
             ),
           ),
         ],

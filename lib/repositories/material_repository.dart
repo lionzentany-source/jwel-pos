@@ -4,7 +4,7 @@ import '../services/database_service.dart';
 
 class MaterialRepository extends BaseRepository<Material> {
   MaterialRepository({DatabaseService? databaseService})
-      : super(databaseService ?? DatabaseService(), 'materials');
+    : super(databaseService ?? DatabaseService(), 'materials');
 
   @override
   Material fromMap(Map<String, dynamic> map) {
@@ -42,16 +42,22 @@ class MaterialRepository extends BaseRepository<Material> {
   }
 
   Future<int> updateMaterialPrice(int id, double newPrice) async {
-  final db = await database;
-    return await db.update('materials', {
-      'price_per_gram': newPrice,
-    }, where: 'id = ?', whereArgs: [id]);
+    final db = await database;
+    return await db.update(
+      'materials',
+      {'price_per_gram': newPrice},
+      where: 'id = ?',
+      whereArgs: [id],
+    );
   }
 
   Future<int> deleteMaterial(int id) async {
     // تحقق صارم من عدم وجود أصناف مرتبطة بالمادة قبل الحذف
     final db = await database;
-    final countResult = await db.rawQuery('SELECT COUNT(*) as cnt FROM items WHERE material_id = ?', [id]);
+    final countResult = await db.rawQuery(
+      'SELECT COUNT(*) as cnt FROM items WHERE material_id = ?',
+      [id],
+    );
     final count = (countResult.first['cnt'] as int?) ?? 0;
     if (count > 0) {
       throw Exception('لا يمكن حذف المادة لوجود $count صنف/أصناف مرتبطة بها');

@@ -1,6 +1,7 @@
 import 'package:flutter/cupertino.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'dart:ui';
+import 'package:fluent_ui/fluent_ui.dart';
+import '../widgets/adaptive_scaffold.dart';
 
 // ...existing code...
 import '../models/invoice.dart';
@@ -16,7 +17,11 @@ import '../providers/item_provider.dart';
 import '../models/item.dart';
 
 class CheckoutScreen extends ConsumerStatefulWidget {
-  const CheckoutScreen({super.key});
+  // embedded: عرض كشاشة عائمة فوق POS بدون Route منفصل
+  const CheckoutScreen({super.key, this.embedded = false, this.onClose});
+
+  final bool embedded;
+  final VoidCallback? onClose; // يُستدعى عند الإغلاق في وضع overlay
 
   @override
   ConsumerState<CheckoutScreen> createState() => _CheckoutScreenState();
@@ -46,84 +51,66 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
     final cart = ref.watch(cartProvider);
     final currency = ref.watch(currencyProvider);
 
-    return Stack(
-      children: [
-        Positioned.fill(
-          child: BackdropFilter(
-            filter: ImageFilter.blur(sigmaX: 6, sigmaY: 6),
-            child: Container(
-              color: CupertinoColors.black.withValues(alpha: 0.05),
-            ),
+    return AdaptiveScaffold(
+      title: 'الدفع/الخروج',
+      backgroundColor: const Color(0xfff6f8fa),
+      body: Center(
+        child: Container(
+          constraints: const BoxConstraints(maxWidth: 500, maxHeight: 600),
+          padding: const EdgeInsets.all(24),
+          decoration: BoxDecoration(
+            color: const Color(0xffffffff),
+            borderRadius: BorderRadius.circular(16),
+            boxShadow: [
+              BoxShadow(
+                color: const Color(0x220078D4),
+                blurRadius: 16,
+                offset: const Offset(0, 4),
+              ),
+            ],
           ),
-        ),
-        Center(
-          child: Container(
-            constraints: const BoxConstraints(maxWidth: 500, maxHeight: 600),
-            padding: const EdgeInsets.all(24),
-            decoration: BoxDecoration(
-              color: CupertinoColors.systemBackground,
-              borderRadius: BorderRadius.circular(16),
-              boxShadow: [
-                BoxShadow(
-                  color: CupertinoColors.systemGrey.withValues(alpha: 0.2),
-                  blurRadius: 16,
-                  offset: const Offset(0, 4),
-                ),
-              ],
-            ),
-            child: Stack(
-              children: [
-                Padding(
-                  padding: const EdgeInsets.only(bottom: 64),
-                  child: SingleChildScrollView(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        _buildOrderSummary(cart, currency),
-                        const SizedBox(height: 16),
-                        _buildCustomerSection(),
-                        const SizedBox(height: 16),
-                        _buildPaymentMethodSection(),
-                        const SizedBox(height: 16),
-                        _buildDiscountSection(currency),
-                        const SizedBox(height: 16),
-                        _buildNotesSection(),
-                      ],
-                    ),
+          child: Stack(
+            children: [
+              Padding(
+                padding: const EdgeInsets.only(bottom: 64),
+                child: SingleChildScrollView(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      _buildOrderSummary(cart, currency),
+                      const SizedBox(height: 16),
+                      _buildCustomerSection(),
+                      const SizedBox(height: 16),
+                      _buildPaymentMethodSection(),
+                      const SizedBox(height: 16),
+                      _buildDiscountSection(currency),
+                      const SizedBox(height: 16),
+                      _buildNotesSection(),
+                    ],
                   ),
                 ),
-                Positioned(
-                  left: 0,
-                  right: 0,
-                  bottom: 0,
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(vertical: 12),
-                    color: CupertinoColors.systemBackground.withOpacity(0.95),
-                    child: _buildActionButtons(cart),
-                  ),
+              ),
+              Positioned(
+                left: 0,
+                right: 0,
+                bottom: 0,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                  color: const Color(0xfff6f8fa),
+                  child: _buildActionButtons(cart),
                 ),
-              ],
-            ),
+              ),
+            ],
           ),
         ),
-      ],
+      ),
     );
   }
 
   Widget _buildOrderSummary(cart, AsyncValue<String> currency) {
-    return Container(
+    return AdaptiveCard(
       padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: CupertinoColors.systemBackground,
-        borderRadius: BorderRadius.circular(12),
-        boxShadow: [
-          BoxShadow(
-            color: CupertinoColors.systemGrey.withValues(alpha: 0.1),
-            blurRadius: 8,
-            offset: const Offset(0, 2),
-          ),
-        ],
-      ),
+      backgroundColor: const Color(0xfff6f8fa),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -188,19 +175,9 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
   }
 
   Widget _buildCustomerSection() {
-    return Container(
+    return AdaptiveCard(
       padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: CupertinoColors.systemBackground,
-        borderRadius: BorderRadius.circular(12),
-        boxShadow: [
-          BoxShadow(
-            color: CupertinoColors.systemGrey.withValues(alpha: 0.1),
-            blurRadius: 8,
-            offset: const Offset(0, 2),
-          ),
-        ],
-      ),
+      backgroundColor: const Color(0xfff6f8fa),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -227,19 +204,9 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
   }
 
   Widget _buildPaymentMethodSection() {
-    return Container(
+    return AdaptiveCard(
       padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: CupertinoColors.systemBackground,
-        borderRadius: BorderRadius.circular(12),
-        boxShadow: [
-          BoxShadow(
-            color: CupertinoColors.systemGrey.withValues(alpha: 0.1),
-            blurRadius: 8,
-            offset: const Offset(0, 2),
-          ),
-        ],
-      ),
+      backgroundColor: const Color(0xfff6f8fa),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -303,19 +270,9 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
   }
 
   Widget _buildDiscountSection(AsyncValue<String> currency) {
-    return Container(
+    return AdaptiveCard(
       padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: CupertinoColors.systemBackground,
-        borderRadius: BorderRadius.circular(12),
-        boxShadow: [
-          BoxShadow(
-            color: CupertinoColors.systemGrey.withValues(alpha: 0.1),
-            blurRadius: 8,
-            offset: const Offset(0, 2),
-          ),
-        ],
-      ),
+      backgroundColor: const Color(0xfff6f8fa),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -345,19 +302,9 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
   }
 
   Widget _buildNotesSection() {
-    return Container(
+    return AdaptiveCard(
       padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: CupertinoColors.systemBackground,
-        borderRadius: BorderRadius.circular(12),
-        boxShadow: [
-          BoxShadow(
-            color: CupertinoColors.systemGrey.withValues(alpha: 0.1),
-            blurRadius: 8,
-            offset: const Offset(0, 2),
-          ),
-        ],
-      ),
+      backgroundColor: const Color(0xfff6f8fa),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -381,18 +328,32 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
     return Row(
       children: [
         Expanded(
-          child: CupertinoButton(
-            onPressed: () => Navigator.pop(context),
+          child: Button(
+            style: ButtonStyle(
+              backgroundColor: WidgetStateProperty.all(const Color(0xfff6f8fa)),
+              foregroundColor: WidgetStateProperty.all(const Color(0xFF0078D4)),
+            ),
+            onPressed: () {
+              if (widget.embedded) {
+                widget.onClose?.call();
+              } else {
+                Navigator.pop(context);
+              }
+            },
             child: const Text('إلغاء'),
           ),
         ),
         const SizedBox(width: 16),
         Expanded(
           flex: 2,
-          child: CupertinoButton.filled(
+          child: FilledButton(
+            style: ButtonStyle(
+              backgroundColor: WidgetStateProperty.all(const Color(0xFF0078D4)),
+              foregroundColor: WidgetStateProperty.all(const Color(0xffffffff)),
+            ),
             onPressed: _isProcessing ? null : _processSale,
             child: _isProcessing
-                ? const CupertinoActivityIndicator(color: CupertinoColors.white)
+                ? const ProgressRing()
                 : const Text(
                     'إتمام البيع',
                     style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
@@ -459,31 +420,41 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
         ref.invalidate(inventoryStatsProvider);
       } catch (_) {}
 
-      if (mounted) {
-        showCupertinoDialog(
-          context: context,
-          builder: (context) => CupertinoAlertDialog(
-            title: const Text('تم البيع بنجاح'),
-            content: Text('رقم الفاتورة: $invoiceNumber'),
-            actions: [
-              CupertinoDialogAction(
-                child: const Text('طباعة'),
-                onPressed: () {
-                  Navigator.pop(context);
-                  _showPrintOptions(invoice, cart.items);
-                },
-              ),
-              CupertinoDialogAction(
-                child: const Text('موافق'),
-                onPressed: () {
-                  Navigator.pop(context);
-                  Navigator.pop(context); // العودة لشاشة نقطة البيع
-                },
-              ),
-            ],
-          ),
-        );
+      if (!mounted) return; // حماية إضافية
+      // إذا كنا في وضع overlay أغلقه أولاً لتختفي فوراً
+      if (widget.embedded) {
+        try {
+          widget.onClose?.call();
+        } catch (_) {}
       }
+      // عرض حوار النجاح باستخدام rootNavigator مع نفس context الحالي (ما دمنا mounted)
+      showCupertinoDialog(
+        context: context,
+        builder: (dCtx) => CupertinoAlertDialog(
+          title: const Text('تم البيع بنجاح'),
+          content: Text('رقم الفاتورة: $invoiceNumber'),
+          actions: [
+            CupertinoDialogAction(
+              child: const Text('طباعة'),
+              onPressed: () {
+                Navigator.pop(dCtx);
+                _showPrintOptions(invoice, cart.items);
+              },
+            ),
+            CupertinoDialogAction(
+              child: const Text('موافق'),
+              onPressed: () {
+                Navigator.pop(dCtx);
+                if (!widget.embedded && mounted) {
+                  Navigator.pop(
+                    context,
+                  ); // العودة لنقطة البيع فقط في وضع الشاشة الكاملة
+                }
+              },
+            ),
+          ],
+        ),
+      );
     } catch (error) {
       if (mounted) {
         showCupertinoDialog(
@@ -540,7 +511,11 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
       );
       if (mounted) {
         _showSuccessMessage('تم إرسال الفاتورة للطابعة الافتراضية بنجاح');
-        Navigator.pop(context); // إغلاق شاشة الدفع بعد الطباعة
+        if (widget.embedded) {
+          widget.onClose?.call();
+        } else {
+          Navigator.pop(context); // إغلاق شاشة الدفع بعد الطباعة
+        }
       }
     } catch (error) {
       if (mounted) {
@@ -558,7 +533,13 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
         actions: [
           CupertinoDialogAction(
             child: const Text('موافق'),
-            onPressed: () => Navigator.pop(context),
+            onPressed: () {
+              if (widget.embedded) {
+                widget.onClose?.call();
+              } else {
+                Navigator.pop(context);
+              }
+            },
           ),
         ],
       ),
@@ -574,7 +555,13 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
         actions: [
           CupertinoDialogAction(
             child: const Text('موافق'),
-            onPressed: () => Navigator.pop(context),
+            onPressed: () {
+              if (widget.embedded) {
+                widget.onClose?.call();
+              } else {
+                Navigator.pop(context);
+              }
+            },
           ),
         ],
       ),

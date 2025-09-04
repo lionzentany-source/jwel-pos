@@ -3,6 +3,7 @@ import 'package:sqflite/sqflite.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:crypto/crypto.dart';
 import 'dart:convert';
+import 'dart:io';
 
 class DatabaseService {
   Database? _database;
@@ -38,12 +39,54 @@ class DatabaseService {
   }
 
   Future<Database> _initDatabase() async {
-    final documentsDirectory = await getApplicationDocumentsDirectory();
-    final path = join(documentsDirectory.path, 'jwe_pos.db');
+    // الهدف: نقل قاعدة البيانات إلى مجلد AppData (Application Support) بدلاً من مجلد المستندات للمستخدم على الأنظمة المكتبية
+    // المسار الجديد (Windows مثال): C:\Users\<User>\AppData\Roaming\jwe_pos\data\jwe_pos.db
+    // نهج الترحيل: إذا وُجد ملف قديم داخل المستندات ولم يوجد الجديد -> ننقله (rename) للمسار الجديد.
 
-      return await openDatabase(
-        path,
-    version: 7,
+    Directory baseDir;
+    try {
+      // نستخدم Application Support للأنظمة المكتبية، وإلا ن fallback للوثائق
+      baseDir = await getApplicationSupportDirectory();
+    } catch (_) {
+      baseDir = await getApplicationDocumentsDirectory();
+    }
+
+    final dataDir = Directory(join(baseDir.path, 'jwe_pos', 'data'));
+    if (!await dataDir.exists()) {
+      await dataDir.create(recursive: true);
+    }
+    final newPath = join(dataDir.path, 'jwe_pos.db');
+
+    // مسار قديم محتمل (الإصدارات السابقة كانت تستخدم getApplicationDocumentsDirectory مباشرة)
+    String? oldPath;
+    try {
+      final oldDocs = await getApplicationDocumentsDirectory();
+      oldPath = join(oldDocs.path, 'jwe_pos.db');
+    } catch (_) {
+      oldPath = null;
+    }
+
+    if (oldPath != null) {
+      final oldFile = File(oldPath);
+      final newFile = File(newPath);
+      if (await oldFile.exists() && !await newFile.exists()) {
+        try {
+          await oldFile.rename(newPath);
+        } catch (e) {
+          // إذا فشل rename (قد يكون بين أقراص مختلفة) نجرب copy ثم حذف
+          try {
+            await oldFile.copy(newPath);
+            await oldFile.delete();
+          } catch (e2) {
+            // نتجاهل بصمت لتفادي تعطيل التطبيق، يمكن لاحقاً إضافة سجل نشاط
+          }
+        }
+      }
+    }
+
+    return await openDatabase(
+      newPath,
+      version: 9,
       onCreate: _onCreate,
       onUpgrade: _onUpgrade,
     );
@@ -84,6 +127,7 @@ class DatabaseService {
         image_path TEXT,
         rfid_tag TEXT UNIQUE,
         status TEXT NOT NULL DEFAULT 'needsRfid',
+  location TEXT NOT NULL DEFAULT 'warehouse',
         created_at TEXT NOT NULL,
         FOREIGN KEY (category_id) REFERENCES categories (id),
         FOREIGN KEY (material_id) REFERENCES materials (id)
@@ -98,6 +142,7 @@ class DatabaseService {
         phone TEXT,
         email TEXT,
         address TEXT,
+        is_active INTEGER NOT NULL DEFAULT 1,
         created_at TEXT NOT NULL
       )
     ''');
@@ -177,9 +222,15 @@ class DatabaseService {
     ''');
 
     // إنشاء فهارس للبحث السريع
-    await db.execute('CREATE INDEX idx_user_activities_user_id ON user_activities(user_id)');
-    await db.execute('CREATE INDEX idx_user_activities_timestamp ON user_activities(timestamp)');
-    await db.execute('CREATE INDEX idx_user_activities_type ON user_activities(activity_type)');
+    await db.execute(
+      'CREATE INDEX idx_user_activities_user_id ON user_activities(user_id)',
+    );
+    await db.execute(
+      'CREATE INDEX idx_user_activities_timestamp ON user_activities(timestamp)',
+    );
+    await db.execute(
+      'CREATE INDEX idx_user_activities_type ON user_activities(activity_type)',
+    );
 
     // جدول المصروفات
     await db.execute('''
@@ -202,14 +253,19 @@ class DatabaseService {
       // إضافة حقول الأيقونة واللون للمستخدمين
       await db.execute('ALTER TABLE users ADD COLUMN avatar_icon TEXT');
       await db.execute('ALTER TABLE users ADD COLUMN avatar_color TEXT');
-      
+
       // تحديث المستخدمين الموجودين بأيقونات افتراضية
-      await db.update('users', {
-        'avatar_icon': 'person_crop_circle_fill',
-        'avatar_color': 'systemBlue',
-      }, where: 'username = ?', whereArgs: ['admin']);
+      await db.update(
+        'users',
+        {
+          'avatar_icon': 'person_crop_circle_fill',
+          'avatar_color': 'systemBlue',
+        },
+        where: 'username = ?',
+        whereArgs: ['admin'],
+      );
     }
-    
+
     if (oldVersion < 3) {
       // إضافة جدول أنشطة المستخدمين إذا لم يكن موجوداً
       await db.execute('''
@@ -226,16 +282,24 @@ class DatabaseService {
           FOREIGN KEY (user_id) REFERENCES users (id)
         )
       ''');
-      
+
       // إنشاء فهارس للبحث السريع
-      await db.execute('CREATE INDEX IF NOT EXISTS idx_user_activities_user_id ON user_activities(user_id)');
-      await db.execute('CREATE INDEX IF NOT EXISTS idx_user_activities_timestamp ON user_activities(timestamp)');
-      await db.execute('CREATE INDEX IF NOT EXISTS idx_user_activities_type ON user_activities(activity_type)');
+      await db.execute(
+        'CREATE INDEX IF NOT EXISTS idx_user_activities_user_id ON user_activities(user_id)',
+      );
+      await db.execute(
+        'CREATE INDEX IF NOT EXISTS idx_user_activities_timestamp ON user_activities(timestamp)',
+      );
+      await db.execute(
+        'CREATE INDEX IF NOT EXISTS idx_user_activities_type ON user_activities(activity_type)',
+      );
     }
-    
+
     if (oldVersion < 4) {
       // إضافة عمود سعر التكلفة للأصناف
-      await db.execute('ALTER TABLE items ADD COLUMN cost_price REAL NOT NULL DEFAULT 0');
+      await db.execute(
+        'ALTER TABLE items ADD COLUMN cost_price REAL NOT NULL DEFAULT 0',
+      );
     }
     if (oldVersion < 5) {
       await db.execute('''
@@ -255,51 +319,130 @@ class DatabaseService {
       final hasIsVariable = columns.any((c) => c['name'] == 'is_variable');
       final hasPricePerGram = columns.any((c) => c['name'] == 'price_per_gram');
       if (!hasIsVariable) {
-        await db.execute('ALTER TABLE materials ADD COLUMN is_variable INTEGER NOT NULL DEFAULT 0');
+        await db.execute(
+          'ALTER TABLE materials ADD COLUMN is_variable INTEGER NOT NULL DEFAULT 0',
+        );
       }
       if (!hasPricePerGram) {
-        await db.execute('ALTER TABLE materials ADD COLUMN price_per_gram REAL NOT NULL DEFAULT 0');
+        await db.execute(
+          'ALTER TABLE materials ADD COLUMN price_per_gram REAL NOT NULL DEFAULT 0',
+        );
       }
 
       // ترقية المواد الافتراضية (ذهب وفضة) إلى مواد متغيرة باستخدام القيم المخزنة في الإعدادات
-      final goldSetting = await db.query('settings', where: 'key = ?', whereArgs: ['gold_price_per_gram'], limit: 1);
-      final silverSetting = await db.query('settings', where: 'key = ?', whereArgs: ['silver_price_per_gram'], limit: 1);
-      final goldPrice = goldSetting.isNotEmpty ? double.tryParse(goldSetting.first['value'] as String) ?? 0 : 0;
-      final silverPrice = silverSetting.isNotEmpty ? double.tryParse(silverSetting.first['value'] as String) ?? 0 : 0;
+      final goldSetting = await db.query(
+        'settings',
+        where: 'key = ?',
+        whereArgs: ['gold_price_per_gram'],
+        limit: 1,
+      );
+      final silverSetting = await db.query(
+        'settings',
+        where: 'key = ?',
+        whereArgs: ['silver_price_per_gram'],
+        limit: 1,
+      );
+      final goldPrice = goldSetting.isNotEmpty
+          ? double.tryParse(goldSetting.first['value'] as String) ?? 0
+          : 0;
+      final silverPrice = silverSetting.isNotEmpty
+          ? double.tryParse(silverSetting.first['value'] as String) ?? 0
+          : 0;
       // تحديث السجلات حسب الاسم العربي
-      await db.update('materials', {'is_variable': 1, 'price_per_gram': goldPrice}, where: 'name_ar = ?', whereArgs: ['ذهب']);
-      await db.update('materials', {'is_variable': 1, 'price_per_gram': silverPrice}, where: 'name_ar = ?', whereArgs: ['فضة']);
+      await db.update(
+        'materials',
+        {'is_variable': 1, 'price_per_gram': goldPrice},
+        where: 'name_ar = ?',
+        whereArgs: ['ذهب'],
+      );
+      await db.update(
+        'materials',
+        {'is_variable': 1, 'price_per_gram': silverPrice},
+        where: 'name_ar = ?',
+        whereArgs: ['فضة'],
+      );
     }
-      if (oldVersion < 7) {
-        // حذف المفاتيح القديمة لأسعار الذهب والفضة بعد الانتقال للتسعير الديناميكي
-        await db.delete('settings', where: 'key IN (?, ?)', whereArgs: ['gold_price_per_gram', 'silver_price_per_gram']);
+    if (oldVersion < 7) {
+      // حذف المفاتيح القديمة لأسعار الذهب والفضة بعد الانتقال للتسعير الديناميكي
+      await db.delete(
+        'settings',
+        where: 'key IN (?, ?)',
+        whereArgs: ['gold_price_per_gram', 'silver_price_per_gram'],
+      );
+    }
+    if (oldVersion < 8) {
+      // إضافة عمود الموقع للأصناف
+      final columns = await db.rawQuery('PRAGMA table_info(items)');
+      final hasLocation = columns.any((c) => c['name'] == 'location');
+      if (!hasLocation) {
+        await db.execute(
+          "ALTER TABLE items ADD COLUMN location TEXT NOT NULL DEFAULT 'warehouse'",
+        );
       }
+    }
+    if (oldVersion < 9) {
+      // إضافة عمود is_active لجدول العملاء إذا كان مفقوداً
+      final customerColumns = await db.rawQuery('PRAGMA table_info(customers)');
+      final hasIsActive = customerColumns.any((c) => c['name'] == 'is_active');
+      if (!hasIsActive) {
+        await db.execute(
+          'ALTER TABLE customers ADD COLUMN is_active INTEGER NOT NULL DEFAULT 1',
+        );
+      }
+    }
   }
 
   Future<void> _insertInitialData(Database db) async {
-    // إدراج فئات افتراضية
-    await db.insert('categories', {'name_ar': 'خواتم', 'icon_name': 'ring'});
-    await db.insert('categories', {
-      'name_ar': 'أساور',
-      'icon_name': 'bracelet',
+    // إدراج فئات مجوهرات افتراضية (أكثر من 10 فئات)
+    final defaultCategories = <Map<String, String>>[
+      {'name_ar': 'خواتم', 'icon_name': 'ring'},
+      {'name_ar': 'أساور', 'icon_name': 'bracelet'},
+      {'name_ar': 'قلائد', 'icon_name': 'necklace'},
+      {'name_ar': 'أقراط', 'icon_name': 'earrings'},
+      {'name_ar': 'سلاسل', 'icon_name': 'link'},
+      {'name_ar': 'تعاليق', 'icon_name': 'tag'},
+      {'name_ar': 'دبل', 'icon_name': 'heart'},
+      {'name_ar': 'خلاخل', 'icon_name': 'soccer'},
+      {'name_ar': 'بروش', 'icon_name': 'pin'},
+      {'name_ar': 'تيجان', 'icon_name': 'crown'},
+      {'name_ar': 'مشابك', 'icon_name': 'pin_fill'},
+      {'name_ar': 'ساعات', 'icon_name': 'clock'},
+    ];
+    for (final cat in defaultCategories) {
+      await db.insert('categories', cat);
+    }
+
+    // إدراج مواد خام افتراضية
+    // مواد الذهب العامة + تفرعات ذهب 18 وذهب 21 والفضة
+    await db.insert('materials', {
+      'name_ar': 'ذهب',
+      'is_variable': 1,
+      'price_per_gram': 200.0,
     });
-    await db.insert('categories', {
-      'name_ar': 'قلائد',
-      'icon_name': 'necklace',
+    await db.insert('materials', {
+      'name_ar': 'ذهب 18',
+      'is_variable': 1,
+      'price_per_gram': 200.0,
     });
-    await db.insert('categories', {
-      'name_ar': 'أقراط',
-      'icon_name': 'earrings',
+    await db.insert('materials', {
+      'name_ar': 'ذهب 21',
+      'is_variable': 1,
+      'price_per_gram': 200.0,
+    });
+    await db.insert('materials', {
+      'name_ar': 'فضة',
+      'is_variable': 1,
+      'price_per_gram': 5.0,
+    });
+    await db.insert('materials', {
+      'name_ar': 'بلاتين',
+      'is_variable': 0,
+      'price_per_gram': 0,
     });
 
-  // إدراج مواد خام افتراضية (ذهب وفضة كمواد متغيرة السعر)
-  await db.insert('materials', {'name_ar': 'ذهب', 'is_variable': 1, 'price_per_gram': 200.0});
-  await db.insert('materials', {'name_ar': 'فضة', 'is_variable': 1, 'price_per_gram': 5.0});
-  await db.insert('materials', {'name_ar': 'بلاتين', 'is_variable': 0, 'price_per_gram': 0});
-
-    // إدراج المستخدمين الافتراضيين
+    // إدراج المستخدم الافتراضي (مدير واحد فقط في أول تشغيل)
     final now = DateTime.now().toIso8601String();
-    
+
     // حساب المدير الرئيسي
     final adminPassword = sha256.convert(utf8.encode('admin123')).toString();
     await db.insert('users', {
@@ -312,85 +455,38 @@ class DatabaseService {
       'avatar_icon': 'person_crop_circle_fill',
       'avatar_color': 'systemBlue',
     });
-    
-    // مدير عام
-    final managerPassword = sha256.convert(utf8.encode('manager123')).toString();
-    await db.insert('users', {
-      'username': 'manager',
-      'password': managerPassword,
-      'full_name': 'المدير العام',
-      'role': 'manager',
-      'is_active': 1,
-      'created_at': now,
-      'avatar_icon': 'person_badge_plus',
-      'avatar_color': 'systemGreen',
-    });
-    
-    // بائع رئيسي
-    final cashierPassword = sha256.convert(utf8.encode('cashier123')).toString();
-    await db.insert('users', {
-      'username': 'cashier',
-      'password': cashierPassword,
-      'full_name': 'البائع الرئيسي',
-      'role': 'cashier',
-      'is_active': 1,
-      'created_at': now,
-      'avatar_icon': 'person_circle',
-      'avatar_color': 'systemOrange',
-    });
-    
-    // مشرف المبيعات
-    final supervisorPassword = sha256.convert(utf8.encode('supervisor123')).toString();
-    await db.insert('users', {
-      'username': 'supervisor',
-      'password': supervisorPassword,
-      'full_name': 'مشرف المبيعات',
-      'role': 'supervisor',
-      'is_active': 1,
-      'created_at': now,
-      'avatar_icon': 'person_2',
-      'avatar_color': 'systemPurple',
-    });
 
     // إدراج إعدادات افتراضية
     await db.insert('settings', {
-      'key': 'gold_price_per_gram',
+      'key': 'gold_price_per_gram', // legacy default for initial materials sync
       'value': '200.0',
       'updated_at': now,
     });
     await db.insert('settings', {
-      'key': 'silver_price_per_gram',
+      'key':
+          'silver_price_per_gram', // legacy default for initial materials sync
       'value': '5.0',
       'updated_at': now,
     });
-      await db.insert('settings', {
-        'key': 'gold_price_per_gram',
-        'value': '200.0',
-        'updated_at': now,
-      });
-      await db.insert('settings', {
-        'key': 'silver_price_per_gram',
-        'value': '5.0',
-        'updated_at': now,
-      });
-      await db.insert('settings', {
-        'key': 'store_name',
-        'value': 'مجوهرات جوهر',
-        'updated_at': now,
-      });
-      await db.insert('settings', {
-        'key': 'currency',
-        'value': 'د.ل دينار ليبي',
-        'updated_at': now,
-      });
-      await db.insert('settings', {
-        'key': 'tax_rate',
-        'value': '0.0',
-        'updated_at': now,
-      });
+    await db.insert('settings', {
+      'key': 'store_name',
+      'value': 'مجوهرات جوهر',
+      'updated_at': now,
+    });
+    await db.insert('settings', {
+      'key': 'currency',
+      'value': 'د.ل دينار ليبي',
+      'updated_at': now,
+    });
     await db.insert('settings', {
       'key': 'tax_rate',
       'value': '0.0',
+      'updated_at': now,
+    });
+    // علم أول تشغيل: يتطلب ضبط كلمة مرور المدير عند أول دخول
+    await db.insert('settings', {
+      'key': 'require_admin_password_setup',
+      'value': 'true',
       'updated_at': now,
     });
   }

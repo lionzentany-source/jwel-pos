@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:path/path.dart' as path;
 import '../models/printer_settings.dart';
+import '../models/invoice_render_data.dart';
 
 /// خدمة الطباعة المحسنة التي تستفيد من الأدوات الصينية المتقدمة
 class EnhancedPrinterService {
@@ -261,7 +262,7 @@ class EnhancedPrinterService {
 
       final result = await Process.run('powershell', [
         '-Command',
-        'Get-PnpDevice -Class "Printer" | Where-Object {\$_.InstanceId -like "*BTHENUM*"} | ConvertTo-Json',
+        r'Get-PnpDevice -Class "Printer" | Where-Object {$_.InstanceId -like "*BTHENUM*"} | ConvertTo-Json',
       ], runInShell: true);
 
       if (result.exitCode == 0) {
@@ -329,12 +330,12 @@ class EnhancedPrinterService {
   /// طباعة فاتورة
   Future<bool> printInvoice(
     PrinterInfo printer,
-    Map<String, dynamic> invoiceData,
+    InvoiceRenderData invoiceRenderData,
   ) async {
     try {
       debugPrint('طباعة فاتورة على: ${printer.name}');
 
-      final invoiceContent = _generateInvoiceContent(invoiceData);
+      final invoiceContent = _generateInvoiceContent(invoiceRenderData);
       final tempFile = await _createTempFile(invoiceContent);
 
       final success = await _executePrintCommand(printer, tempFile.path);
@@ -469,18 +470,18 @@ $cutCommand''';
   }
 
   /// توليد محتوى الفاتورة
-  String _generateInvoiceContent(Map<String, dynamic> data) {
-    final storeName = data['storeName'] ?? 'متجر الجوهر';
-    final storeAddress = data['storeAddress'] ?? 'العنوان غير محدد';
-    final storePhone = data['storePhone'] ?? 'الهاتف غير محدد';
-    final invoiceNumber = data['invoiceNumber'] ?? 'INV-001';
-    final customerName = data['customerName'] ?? 'عميل';
-    final items = data['items'] as List<dynamic>? ?? [];
-    final subtotal = data['subtotal'] ?? 0.0;
-    final discount = data['discount'] ?? 0.0;
-    final tax = data['tax'] ?? 0.0;
-    final total = data['total'] ?? 0.0;
-    final paymentMethod = data['paymentMethod'] ?? 'نقدي';
+  String _generateInvoiceContent(InvoiceRenderData invoiceRenderData) {
+    final storeName = invoiceRenderData.storeName;
+    final storeAddress = invoiceRenderData.storeAddress ?? 'العنوان غير محدد';
+    final storePhone = invoiceRenderData.storePhone ?? 'الهاتف غير محدد';
+    final invoiceNumber = invoiceRenderData.invoiceNumber;
+    final customerName = invoiceRenderData.customerName ?? 'عميل';
+    final items = invoiceRenderData.items;
+    final subtotal = invoiceRenderData.subtotal;
+    final discount = invoiceRenderData.discount;
+    final tax = invoiceRenderData.tax;
+    final total = invoiceRenderData.total;
+    final paymentMethod = invoiceRenderData.paymentMethod;
 
     final buffer = StringBuffer();
 
@@ -493,9 +494,11 @@ $cutCommand''';
     buffer.writeln('------------------------------------------------');
     buffer.writeln('');
     buffer.writeln('رقم الفاتورة: $invoiceNumber');
-    buffer.writeln('التاريخ: ${DateTime.now().toString().split(' ')[0]}');
     buffer.writeln(
-      'الوقت: ${DateTime.now().toString().split(' ')[1].split('.')[0]}',
+      'التاريخ: ${invoiceRenderData.date.toString().split(' ')[0]}',
+    );
+    buffer.writeln(
+      'الوقت: ${invoiceRenderData.date.toString().split(' ')[1].split('.')[0]}',
     );
     buffer.writeln('العميل: $customerName');
     buffer.writeln('');
@@ -505,10 +508,10 @@ $cutCommand''';
 
     // الأصناف
     for (final item in items) {
-      final name = (item['name'] ?? 'صنف').toString();
-      final quantity = (item['quantity'] ?? 1).toString();
-      final price = (item['price'] ?? 0.0).toString();
-      final itemTotal = (item['total'] ?? 0.0).toString();
+      final name = item.item.sku;
+      final quantity = item.quantity.toString();
+      final price = item.unitPrice.toStringAsFixed(2);
+      final itemTotal = item.totalPrice.toStringAsFixed(2);
 
       buffer.writeln(
         '${name.padRight(25)} ${quantity.padLeft(6)} ${price.padLeft(8)} ${itemTotal.padLeft(8)}',

@@ -1,4 +1,5 @@
 import 'package:flutter/cupertino.dart';
+import 'package:fluent_ui/fluent_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../widgets/adaptive_scaffold.dart';
@@ -34,44 +35,53 @@ class _CustomersScreenState extends ConsumerState<CustomersScreen> {
   Widget build(BuildContext context) {
     final customersAsync = ref.watch(customerNotifierProvider);
 
-    return AdaptiveScaffold(
-      title: 'العملاء',
-      actions: [
-        CupertinoButton(
-          padding: EdgeInsets.zero,
-          onPressed: () => _showCustomerFormDialog(),
-          child: const Icon(CupertinoIcons.add),
-        ),
-      ],
-      body: GestureDetector(
-        onTap: () {
-          FocusScope.of(context).unfocus();
-        },
-        child: Column(
-          children: [
-            // شريط البحث
-            Padding(
-              padding: const EdgeInsets.all(16),
-              child: CupertinoSearchTextField(
-                controller: _searchController,
-                placeholder: 'البحث بالاسم أو الهاتف...',
-              ),
+    return Container(
+      color: Color(0xfff6f8fa), // خلفية موحدة
+      child: AdaptiveScaffold(
+        title: 'العملاء',
+        commandBarItems: [
+          CommandBarButton(
+            icon: const Icon(FluentIcons.add, size: 20),
+            label: const Text(
+              'إضافة',
+              style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
             ),
-
-            // قائمة العملاء
-            Expanded(
-              child: customersAsync.when(
-                data: (customers) => _buildCustomersList(customers),
-                loading: () =>
-                    const Center(child: CupertinoActivityIndicator()),
-                error: (error, stack) => AppLoadingErrorWidget(
-                  title: 'خطأ في تحميل العملاء',
-                  message: error.toString(),
-                  onRetry: () => ref.refresh(customerNotifierProvider),
+            onPressed: () => _showCustomerFormDialog(),
+          ),
+        ],
+        body: GestureDetector(
+          onTap: () {
+            FocusScope.of(context).unfocus();
+          },
+          child: Column(
+            children: [
+              // شريط البحث
+              Padding(
+                padding: const EdgeInsets.all(16),
+                child: CupertinoSearchTextField(
+                  controller: _searchController,
+                  placeholder: 'البحث بالاسم أو الهاتف...',
+                  backgroundColor: Color(0xffFFFFFF),
+                  style: TextStyle(color: Color(0xff222B45)),
+                  placeholderStyle: TextStyle(color: Color(0xff106EBE)),
                 ),
               ),
-            ),
-          ],
+
+              // قائمة العملاء
+              Expanded(
+                child: customersAsync.when(
+                  data: (customers) => _buildCustomersList(customers),
+                  loading: () =>
+                      const Center(child: CupertinoActivityIndicator()),
+                  error: (error, stack) => AppLoadingErrorWidget(
+                    title: 'خطأ في تحميل العملاء',
+                    message: error.toString(),
+                    onRetry: () => ref.refresh(customerNotifierProvider),
+                  ),
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -89,24 +99,21 @@ class _CustomersScreenState extends ConsumerState<CustomersScreen> {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            const Icon(
-              CupertinoIcons.person_2,
+            Icon(
+              FluentIcons.people,
               size: 80,
-              color: CupertinoColors.systemGrey3,
+              color: FluentTheme.of(context).inactiveColor,
             ),
             const SizedBox(height: 16),
             Text(
               _searchController.text.isNotEmpty
                   ? 'لا توجد نتائج'
                   : 'لا يوجد عملاء',
-              style: const TextStyle(
-                fontSize: 18,
-                color: CupertinoColors.secondaryLabel,
-              ),
+              style: FluentTheme.of(context).typography.subtitle,
             ),
             if (_searchController.text.isEmpty) ...[
               const SizedBox(height: 24),
-              CupertinoButton.filled(
+              FilledButton(
                 onPressed: () => _showCustomerFormDialog(),
                 child: const Text('إضافة عميل جديد'),
               ),
@@ -127,25 +134,13 @@ class _CustomersScreenState extends ConsumerState<CustomersScreen> {
   }
 
   Widget _buildCustomerCard(Customer customer) {
-    return Container(
-      margin: const EdgeInsets.only(bottom: 12),
+    return Card(
       padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: CupertinoColors.systemBackground,
-        borderRadius: BorderRadius.circular(12),
-        boxShadow: [
-          BoxShadow(
-            color: CupertinoColors.systemGrey.withValues(alpha: 0.1),
-            blurRadius: 8,
-            offset: const Offset(0, 2),
-          ),
-        ],
-      ),
       child: Row(
         children: [
-          const Icon(
-            CupertinoIcons.person_fill,
-            color: CupertinoColors.activeBlue,
+          Icon(
+            FluentIcons.contact,
+            color: FluentTheme.of(context).accentColor,
             size: 40,
           ),
           const SizedBox(width: 16),
@@ -161,16 +156,13 @@ class _CustomersScreenState extends ConsumerState<CustomersScreen> {
               ],
             ),
           ),
-          CupertinoButton(
+          Button(
             onPressed: () => _showCustomerFormDialog(customer: customer),
-            child: const Icon(CupertinoIcons.pencil),
+            child: const Icon(FluentIcons.edit),
           ),
-          CupertinoButton(
+          Button(
             onPressed: () => _showDeleteConfirmation(customer),
-            child: const Icon(
-              CupertinoIcons.trash,
-              color: CupertinoColors.systemRed,
-            ),
+            child: Icon(FluentIcons.delete, color: Colors.red),
           ),
         ],
       ),
@@ -192,33 +184,30 @@ class _CustomersScreenState extends ConsumerState<CustomersScreen> {
       builder: (context) => CupertinoAlertDialog(
         title: Text(isEditMode ? 'تعديل العميل' : 'إضافة عميل جديد'),
         content: Column(
-            children: [
-              const SizedBox(height: 16),
-              CupertinoTextField(
-                controller: nameController,
-                placeholder: 'الاسم *',
-                padding: const EdgeInsets.all(12),
-              ),
-              const SizedBox(height: 12),
-              CupertinoTextField(
-                controller: phoneController,
-                placeholder: 'الهاتف',
-                keyboardType: TextInputType.phone,
-                padding: const EdgeInsets.all(12),
-              ),
-              const SizedBox(height: 12),
-              CupertinoTextField(
-                controller: emailController,
-                placeholder: 'البريد الإلكتروني',
-                keyboardType: TextInputType.emailAddress,
-                padding: const EdgeInsets.all(12),
-              ),
-              const SizedBox(height: 12),
-              CupertinoTextField(
-                controller: addressController,
-                placeholder: 'العنوان',
-              ),
-            ],
+          children: [
+            const SizedBox(height: 16),
+            CupertinoTextField(
+              controller: nameController,
+              placeholder: 'الاسم *',
+              padding: const EdgeInsets.all(12),
+            ),
+            const SizedBox(height: 12),
+            CupertinoTextField(
+              controller: phoneController,
+              placeholder: 'الهاتف',
+              keyboardType: TextInputType.phone,
+              padding: const EdgeInsets.all(12),
+            ),
+            const SizedBox(height: 12),
+            TextBox(
+              controller: emailController,
+              placeholder: 'البريد الإلكتروني',
+              keyboardType: TextInputType.emailAddress,
+              padding: const EdgeInsets.all(12),
+            ),
+            const SizedBox(height: 12),
+            TextBox(controller: addressController, placeholder: 'العنوان'),
+          ],
         ),
         actions: [
           CupertinoDialogAction(
@@ -264,18 +253,17 @@ class _CustomersScreenState extends ConsumerState<CustomersScreen> {
   }
 
   void _showDeleteConfirmation(Customer customer) {
-    showCupertinoDialog(
+    showDialog(
       context: context,
-      builder: (context) => CupertinoAlertDialog(
+      builder: (context) => ContentDialog(
         title: const Text('حذف العميل'),
         content: Text('هل أنت متأكد من حذف "${customer.name}"؟'),
         actions: [
-          CupertinoDialogAction(
-            child: const Text('إلغاء'),
+          Button(
             onPressed: () => Navigator.pop(context),
+            child: const Text('إلغاء'),
           ),
-          CupertinoDialogAction(
-            isDestructiveAction: true,
+          FilledButton(
             onPressed: () async {
               await ref
                   .read(customerNotifierProvider.notifier)

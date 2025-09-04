@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:flutter/foundation.dart';
 import '../models/advanced_report.dart';
+import '../models/invoice.dart';
 import '../models/item.dart';
 import '../repositories/invoice_repository.dart';
 import '../repositories/item_repository.dart';
@@ -22,6 +23,9 @@ class AdvancedReportService {
   Future<ProfitabilityData> generateProfitabilityReport({
     required DateTime startDate,
     required DateTime endDate,
+    int? categoryId,
+    PaymentMethod? paymentMethod,
+    ItemLocation? itemLocation,
   }) async {
     try {
       debugPrint("--- GENERATING PROFITABILITY REPORT ---");
@@ -29,6 +33,9 @@ class AdvancedReportService {
       final invoices = await _invoiceRepository.getInvoicesByDateRange(
         startDate: startDate,
         endDate: endDate,
+        categoryId: categoryId,
+        paymentMethod: paymentMethod,
+        itemLocation: itemLocation,
       );
 
       double totalRevenue = 0;
@@ -99,6 +106,9 @@ class AdvancedReportService {
   Future<TrendData> generateTrendAnalysis({
     required DateTime startDate,
     required DateTime endDate,
+    int? categoryId,
+    PaymentMethod? paymentMethod,
+    ItemLocation? itemLocation,
   }) async {
     try {
       debugPrint("--- GENERATING TREND ANALYSIS ---");
@@ -106,6 +116,9 @@ class AdvancedReportService {
       final invoices = await _invoiceRepository.getInvoicesByDateRange(
         startDate: startDate,
         endDate: endDate,
+        categoryId: categoryId,
+        paymentMethod: paymentMethod,
+        itemLocation: itemLocation,
       );
 
       // تجميع المبيعات اليومية
@@ -195,6 +208,9 @@ class AdvancedReportService {
     required DateTime startDate,
     required DateTime endDate,
     int limit = 10,
+    int? categoryId,
+    PaymentMethod? paymentMethod,
+    ItemLocation? itemLocation,
   }) async {
     try {
       debugPrint("--- GENERATING TOP CUSTOMERS REPORT ---");
@@ -202,6 +218,9 @@ class AdvancedReportService {
       final invoices = await _invoiceRepository.getInvoicesByDateRange(
         startDate: startDate,
         endDate: endDate,
+        categoryId: categoryId,
+        paymentMethod: paymentMethod,
+        itemLocation: itemLocation,
       );
 
       Map<int, Map<String, dynamic>> customerStats = {};
@@ -246,6 +265,9 @@ class AdvancedReportService {
   Future<Map<String, dynamic>> generatePaymentMethodsAnalysis({
     required DateTime startDate,
     required DateTime endDate,
+    int? categoryId,
+    PaymentMethod? paymentMethod,
+    ItemLocation? itemLocation,
   }) async {
     try {
       debugPrint("--- GENERATING PAYMENT METHODS ANALYSIS ---");
@@ -253,6 +275,9 @@ class AdvancedReportService {
       final invoices = await _invoiceRepository.getInvoicesByDateRange(
         startDate: startDate,
         endDate: endDate,
+        categoryId: categoryId,
+        paymentMethod: paymentMethod,
+        itemLocation: itemLocation,
       );
 
       Map<String, double> paymentMethods = {'نقدي': 0, 'بطاقة': 0, 'تقسيط': 0};
@@ -358,6 +383,9 @@ class AdvancedReportService {
   Future<Map<String, dynamic>> generateComparisonReport({
     required DateTime startDate,
     required DateTime endDate,
+    int? categoryId,
+    PaymentMethod? paymentMethod,
+    ItemLocation? itemLocation,
   }) async {
     try {
       debugPrint("--- GENERATING COMPARISON REPORT ---");
@@ -368,10 +396,16 @@ class AdvancedReportService {
       final currentInvoices = await _invoiceRepository.getInvoicesByDateRange(
         startDate: startDate,
         endDate: endDate,
+        categoryId: categoryId,
+        paymentMethod: paymentMethod,
+        itemLocation: itemLocation,
       );
       final previousInvoices = await _invoiceRepository.getInvoicesByDateRange(
         startDate: prevStart,
         endDate: prevEnd,
+        categoryId: categoryId,
+        paymentMethod: paymentMethod,
+        itemLocation: itemLocation,
       );
 
       double currentTotal = 0;
@@ -460,12 +494,18 @@ class AdvancedReportService {
   Future<Map<String, dynamic>> generateCashFlowReport({
     required DateTime startDate,
     required DateTime endDate,
+    int? categoryId,
+    PaymentMethod? paymentMethod,
+    ItemLocation? itemLocation,
   }) async {
     try {
       debugPrint("--- GENERATING CASH FLOW REPORT ---");
       final invoices = await _invoiceRepository.getInvoicesByDateRange(
         startDate: startDate,
         endDate: endDate,
+        categoryId: categoryId,
+        paymentMethod: paymentMethod,
+        itemLocation: itemLocation,
       );
 
       double cashIn = 0;

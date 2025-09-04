@@ -8,6 +8,14 @@ enum ItemStatus {
   final String displayName;
 }
 
+enum ItemLocation {
+  warehouse('المخزن'),
+  showroom('صالة العرض');
+
+  const ItemLocation(this.displayName);
+  final String displayName;
+}
+
 class Item {
   final int? id;
   final String sku;
@@ -21,6 +29,7 @@ class Item {
   final String? imagePath;
   String? rfidTag; // Changed from final to mutable
   final ItemStatus status;
+  final ItemLocation location;
   final DateTime createdAt;
 
   Item({
@@ -36,6 +45,7 @@ class Item {
     this.imagePath,
     this.rfidTag,
     this.status = ItemStatus.needsRfid,
+    this.location = ItemLocation.warehouse,
     DateTime? createdAt,
   }) : createdAt = createdAt ?? DateTime.now();
 
@@ -53,6 +63,7 @@ class Item {
       'image_path': imagePath,
       'rfid_tag': rfidTag,
       'status': status.name,
+      'location': location.name,
       'created_at': createdAt.toIso8601String(),
     };
   }
@@ -74,13 +85,20 @@ class Item {
         (e) => e.name == map['status'],
         orElse: () => ItemStatus.needsRfid,
       ),
+      location: ItemLocation.values.firstWhere(
+        (e) => e.name == (map['location'] ?? 'warehouse'),
+        orElse: () => ItemLocation.warehouse,
+      ),
       createdAt: DateTime.parse(map['created_at']),
     );
   }
 
   // حساب السعر النهائي بناءً على سعر الجرام للمواد
   // gramPrice: السعر الافتراضي (للتوافق السابق) إذا لم يتوفر سعر خاص بالمادة
-  double calculateTotalPrice(double gramPrice, {double? materialSpecificPrice}) {
+  double calculateTotalPrice(
+    double gramPrice, {
+    double? materialSpecificPrice,
+  }) {
     final effectivePrice = materialSpecificPrice ?? gramPrice;
     final materialPrice = weightGrams * effectivePrice;
     return materialPrice + workmanshipFee + stonePrice;
@@ -98,7 +116,10 @@ class Item {
     double? costPrice,
     String? imagePath,
     String? rfidTag,
+    bool clearRfidTag =
+        false, // إذا true سيتم تعيين rfidTag إلى null حتى لو تم تمرير قيمة
     ItemStatus? status,
+    ItemLocation? location,
     DateTime? createdAt,
   }) {
     return Item(
@@ -112,8 +133,9 @@ class Item {
       stonePrice: stonePrice ?? this.stonePrice,
       costPrice: costPrice ?? this.costPrice,
       imagePath: imagePath ?? this.imagePath,
-      rfidTag: rfidTag ?? this.rfidTag,
+      rfidTag: clearRfidTag ? null : (rfidTag ?? this.rfidTag),
       status: status ?? this.status,
+      location: location ?? this.location,
       createdAt: createdAt ?? this.createdAt,
     );
   }

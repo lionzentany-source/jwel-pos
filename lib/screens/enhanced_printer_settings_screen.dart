@@ -1,24 +1,34 @@
 import 'package:flutter/cupertino.dart';
+import 'package:flutter/material.dart' as m;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:collection/collection.dart';
 import '../widgets/adaptive_scaffold.dart';
+import '../widgets/app_button.dart';
 import '../services/enhanced_printer_service.dart';
 import '../models/printer_settings.dart';
+import '../models/invoice_render_data.dart';
+import '../models/cart_item.dart';
+import '../models/item.dart';
 
 class EnhancedPrinterSettingsScreen extends ConsumerStatefulWidget {
   const EnhancedPrinterSettingsScreen({super.key});
 
   @override
-  ConsumerState<EnhancedPrinterSettingsScreen> createState() => _EnhancedPrinterSettingsScreenState();
+  ConsumerState<EnhancedPrinterSettingsScreen> createState() =>
+      _EnhancedPrinterSettingsScreenState();
 }
 
-class _EnhancedPrinterSettingsScreenState extends ConsumerState<EnhancedPrinterSettingsScreen> {
+class _EnhancedPrinterSettingsScreenState
+    extends ConsumerState<EnhancedPrinterSettingsScreen> {
   final _printerService = EnhancedPrinterService();
-  
+
   List<PrinterInfo> _printers = [];
   PrinterInfo? _selectedPrinter;
   bool _isLoading = false;
   bool _isInitialized = false;
-  
+  bool _cancelDiscovery = false;
+
   // إعدادات الطابعة المخصصة
   final _customNameController = TextEditingController();
   final _customIpController = TextEditingController();
@@ -44,18 +54,21 @@ class _EnhancedPrinterSettingsScreenState extends ConsumerState<EnhancedPrinterS
   Future<void> _initializeService() async {
     if (!mounted) return;
     setState(() => _isLoading = true);
-    
+
     try {
       final initialized = await _printerService.initialize();
       if (!mounted) return;
-      
+
       if (initialized) {
         await _discoverPrinters();
         if (mounted) {
           setState(() => _isInitialized = true);
         }
       } else {
-        _showError('فشل في تهيئة خدمة الطباعة', 'تأكد من وجود أداة الطباعة الصينية');
+        _showError(
+          'فشل في تهيئة خدمة الطباعة',
+          'تأكد من وجود أداة الطباعة الصينية',
+        );
       }
     } catch (e) {
       if (mounted) {
@@ -71,16 +84,23 @@ class _EnhancedPrinterSettingsScreenState extends ConsumerState<EnhancedPrinterS
   Future<void> _discoverPrinters() async {
     if (!mounted) return;
     setState(() => _isLoading = true);
-    
+
     try {
-      final printers = await _printerService.discoverPrinters();
+      _cancelDiscovery = false;
+      // Run discovery with a safety timeout so UI never hangs forever
+      final printers = await _printerService.discoverPrinters().timeout(
+        const Duration(seconds: 12),
+        onTimeout: () => [],
+      );
       if (!mounted) return;
-      
+      if (_cancelDiscovery) return; // user cancelled
       setState(() {
         _printers = printers;
-        _selectedPrinter = _printerService.selectedPrinter ?? 
-                          printers.where((p) => p.isDefault).firstOrNull ?? 
-                          printers.firstOrNull;
+        _loadSelectedPrinter();
+        _selectedPrinter ??=
+            _printerService.selectedPrinter ??
+            printers.where((p) => p.isDefault).firstOrNull ??
+            printers.firstOrNull;
         if (_selectedPrinter != null) {
           _printerService.setSelectedPrinter(_selectedPrinter!);
         }
@@ -96,31 +116,48 @@ class _EnhancedPrinterSettingsScreenState extends ConsumerState<EnhancedPrinterS
     }
   }
 
+  Future<void> _loadSelectedPrinter() async {
+    final prefs = await SharedPreferences.getInstance();
+    final printerName = prefs.getString('selected_printer_name');
+    if (printerName != null) {
+      final printer = _printers.firstWhereOrNull((p) => p.name == printerName);
+      if (printer != null) {
+        setState(() {
+          _selectedPrinter = printer;
+        });
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
-    return AdaptiveScaffold(
-      title: 'إعدادات الطباعة المتقدمة',
-      body: _isLoading
-          ? const Center(child: CupertinoActivityIndicator())
-          : !_isInitialized
-              ? _buildInitializationError()
-              : SingleChildScrollView(
-                  padding: const EdgeInsets.all(16),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      _buildDiscoverySection(),
-                      const SizedBox(height: 20),
-                      _buildPrintersListSection(),
-                      const SizedBox(height: 20),
-                      _buildSelectedPrinterSection(),
-                      const SizedBox(height: 20),
-                      _buildCustomPrinterSection(),
-                      const SizedBox(height: 20),
-                      _buildTestSection(),
-                    ],
-                  ),
+    return Container(
+      color: const Color(0xFFF6F8FA),
+      child: AdaptiveScaffold(
+        title: 'إعدادات الطباعة المتقدمة',
+        showBackButton: true,
+        body: _isLoading
+            ? const Center(child: CupertinoActivityIndicator())
+            : !_isInitialized
+            ? _buildInitializationError()
+            : SingleChildScrollView(
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    _buildDiscoverySection(),
+                    const SizedBox(height: 20),
+                    _buildPrintersListSection(),
+                    const SizedBox(height: 20),
+                    _buildSelectedPrinterSection(),
+                    const SizedBox(height: 20),
+                    _buildCustomPrinterSection(),
+                    const SizedBox(height: 20),
+                    _buildTestSection(),
+                  ],
                 ),
+              ),
+      ),
     );
   }
 
@@ -146,9 +183,9 @@ class _EnhancedPrinterSettingsScreenState extends ConsumerState<EnhancedPrinterS
             style: TextStyle(color: CupertinoColors.secondaryLabel),
           ),
           const SizedBox(height: 20),
-          CupertinoButton.filled(
+          AppButton.primary(
+            text: 'إعادة المحاولة',
             onPressed: _initializeService,
-            child: const Text('إعادة المحاولة'),
           ),
         ],
       ),
@@ -159,11 +196,11 @@ class _EnhancedPrinterSettingsScreenState extends ConsumerState<EnhancedPrinterS
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: CupertinoColors.systemBackground,
+        color: m.Colors.white,
         borderRadius: BorderRadius.circular(12),
         boxShadow: [
           BoxShadow(
-            color: CupertinoColors.systemGrey.withValues(alpha: 0.1),
+            color: m.Colors.black.withAlpha(15),
             blurRadius: 8,
             offset: const Offset(0, 2),
           ),
@@ -191,13 +228,31 @@ class _EnhancedPrinterSettingsScreenState extends ConsumerState<EnhancedPrinterS
           const SizedBox(height: 16),
           SizedBox(
             width: double.infinity,
-            child: CupertinoButton.filled(
-              onPressed: _isLoading ? null : _discoverPrinters,
-              child: _isLoading
-                  ? const CupertinoActivityIndicator(color: CupertinoColors.white)
-                  : const Text('إعادة البحث'),
+            child: AppButton.primary(
+              text: _isLoading ? 'جارٍ البحث...' : 'إعادة البحث',
+              onPressed: _isLoading
+                  ? null
+                  : () async {
+                      await _discoverPrinters();
+                    },
             ),
           ),
+          if (_isLoading) ...[
+            const SizedBox(height: 8),
+            SizedBox(
+              width: double.infinity,
+              child: AppButton.secondary(
+                text: 'إلغاء البحث',
+                onPressed: () {
+                  // best-effort cancel: set flag and stop showing loader
+                  setState(() {
+                    _cancelDiscovery = true;
+                    _isLoading = false;
+                  });
+                },
+              ),
+            ),
+          ],
         ],
       ),
     );
@@ -208,11 +263,11 @@ class _EnhancedPrinterSettingsScreenState extends ConsumerState<EnhancedPrinterS
       return Container(
         padding: const EdgeInsets.all(32),
         decoration: BoxDecoration(
-          color: CupertinoColors.systemBackground,
+          color: m.Colors.white,
           borderRadius: BorderRadius.circular(12),
           boxShadow: [
             BoxShadow(
-              color: CupertinoColors.systemGrey.withValues(alpha: 0.1),
+              color: m.Colors.black.withAlpha(15),
               blurRadius: 8,
               offset: const Offset(0, 2),
             ),
@@ -244,11 +299,11 @@ class _EnhancedPrinterSettingsScreenState extends ConsumerState<EnhancedPrinterS
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: CupertinoColors.systemBackground,
+        color: m.Colors.white,
         borderRadius: BorderRadius.circular(12),
         boxShadow: [
           BoxShadow(
-            color: CupertinoColors.systemGrey.withValues(alpha: 0.1),
+            color: m.Colors.black.withAlpha(15),
             blurRadius: 8,
             offset: const Offset(0, 2),
           ),
@@ -273,15 +328,15 @@ class _EnhancedPrinterSettingsScreenState extends ConsumerState<EnhancedPrinterS
 
   Widget _buildPrinterTile(PrinterInfo printer) {
     final isSelected = _selectedPrinter == printer;
-    
+
     return Container(
       margin: const EdgeInsets.only(bottom: 8),
       decoration: BoxDecoration(
-        color: isSelected 
+        color: isSelected
             ? CupertinoColors.activeBlue.withValues(alpha: 0.1)
             : CupertinoColors.systemGrey6,
         borderRadius: BorderRadius.circular(8),
-        border: isSelected 
+        border: isSelected
             ? Border.all(color: CupertinoColors.activeBlue, width: 2)
             : null,
       ),
@@ -330,8 +385,8 @@ class _EnhancedPrinterSettingsScreenState extends ConsumerState<EnhancedPrinterS
               printer.isAvailable ? 'متاح' : 'غير متاح',
               style: TextStyle(
                 fontSize: 12,
-                color: printer.isAvailable 
-                    ? CupertinoColors.activeGreen 
+                color: printer.isAvailable
+                    ? CupertinoColors.activeGreen
                     : CupertinoColors.systemRed,
               ),
             ),
@@ -355,11 +410,11 @@ class _EnhancedPrinterSettingsScreenState extends ConsumerState<EnhancedPrinterS
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: CupertinoColors.systemBackground,
+        color: m.Colors.white,
         borderRadius: BorderRadius.circular(12),
         boxShadow: [
           BoxShadow(
-            color: CupertinoColors.systemGrey.withValues(alpha: 0.1),
+            color: m.Colors.black.withAlpha(15),
             blurRadius: 8,
             offset: const Offset(0, 2),
           ),
@@ -376,15 +431,19 @@ class _EnhancedPrinterSettingsScreenState extends ConsumerState<EnhancedPrinterS
           _buildDetailRow('الاسم', _selectedPrinter!.name),
           _buildDetailRow('النوع', _getPrinterTypeText(_selectedPrinter!.type)),
           _buildDetailRow('طريقة الاتصال', _selectedPrinter!.connectionString),
-          _buildDetailRow('الحالة', _selectedPrinter!.isAvailable ? 'متاح' : 'غير متاح'),
+          _buildDetailRow(
+            'الحالة',
+            _selectedPrinter!.isAvailable ? 'متاح' : 'غير متاح',
+          ),
           if (_selectedPrinter!.details.isNotEmpty) ...[
             const SizedBox(height: 8),
             const Text(
               'تفاصيل إضافية:',
               style: TextStyle(fontWeight: FontWeight.w500),
             ),
-            ..._selectedPrinter!.details.entries.map((entry) =>
-                _buildDetailRow(entry.key, entry.value.toString())),
+            ..._selectedPrinter!.details.entries.map(
+              (entry) => _buildDetailRow(entry.key, entry.value.toString()),
+            ),
           ],
         ],
       ),
@@ -419,11 +478,11 @@ class _EnhancedPrinterSettingsScreenState extends ConsumerState<EnhancedPrinterS
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: CupertinoColors.systemBackground,
+        color: m.Colors.white,
         borderRadius: BorderRadius.circular(12),
         boxShadow: [
           BoxShadow(
-            color: CupertinoColors.systemGrey.withValues(alpha: 0.1),
+            color: m.Colors.black.withAlpha(15),
             blurRadius: 8,
             offset: const Offset(0, 2),
           ),
@@ -437,17 +496,26 @@ class _EnhancedPrinterSettingsScreenState extends ConsumerState<EnhancedPrinterS
             style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
           ),
           const SizedBox(height: 16),
-          
+
           // نوع الطابعة
-          const Text('نوع الطابعة', style: TextStyle(fontWeight: FontWeight.w500)),
+          const Text(
+            'نوع الطابعة',
+            style: TextStyle(fontWeight: FontWeight.w500),
+          ),
           const SizedBox(height: 8),
           CupertinoSlidingSegmentedControl<PrinterType>(
             groupValue: _customType,
             children: const {
               PrinterType.network: Text('شبكة', style: TextStyle(fontSize: 12)),
               PrinterType.usb: Text('USB', style: TextStyle(fontSize: 12)),
-              PrinterType.bluetooth: Text('بلوتوث', style: TextStyle(fontSize: 12)),
-              PrinterType.windows: Text('Windows', style: TextStyle(fontSize: 12)),
+              PrinterType.bluetooth: Text(
+                'بلوتوث',
+                style: TextStyle(fontSize: 12),
+              ),
+              PrinterType.windows: Text(
+                'Windows',
+                style: TextStyle(fontSize: 12),
+              ),
             },
             onValueChanged: (value) {
               setState(() {
@@ -456,9 +524,12 @@ class _EnhancedPrinterSettingsScreenState extends ConsumerState<EnhancedPrinterS
             },
           ),
           const SizedBox(height: 16),
-          
+
           // اسم الطابعة
-          const Text('اسم الطابعة', style: TextStyle(fontWeight: FontWeight.w500)),
+          const Text(
+            'اسم الطابعة',
+            style: TextStyle(fontWeight: FontWeight.w500),
+          ),
           const SizedBox(height: 8),
           CupertinoTextField(
             controller: _customNameController,
@@ -466,16 +537,16 @@ class _EnhancedPrinterSettingsScreenState extends ConsumerState<EnhancedPrinterS
             padding: const EdgeInsets.all(12),
           ),
           const SizedBox(height: 16),
-          
+
           // إعدادات حسب النوع
           ..._buildCustomTypeSettings(),
-          
+
           const SizedBox(height: 16),
           SizedBox(
             width: double.infinity,
-            child: CupertinoButton.filled(
+            child: AppButton.primary(
+              text: 'إضافة الطابعة',
               onPressed: _addCustomPrinter,
-              child: const Text('إضافة الطابعة'),
             ),
           ),
         ],
@@ -508,7 +579,10 @@ class _EnhancedPrinterSettingsScreenState extends ConsumerState<EnhancedPrinterS
       case PrinterType.usb:
       case PrinterType.bluetooth:
         return [
-          const Text('معرف الجهاز', style: TextStyle(fontWeight: FontWeight.w500)),
+          const Text(
+            'معرف الجهاز',
+            style: TextStyle(fontWeight: FontWeight.w500),
+          ),
           const SizedBox(height: 8),
           CupertinoTextField(
             controller: _customDeviceIdController,
@@ -534,11 +608,11 @@ class _EnhancedPrinterSettingsScreenState extends ConsumerState<EnhancedPrinterS
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: CupertinoColors.systemBackground,
+        color: m.Colors.white,
         borderRadius: BorderRadius.circular(12),
         boxShadow: [
           BoxShadow(
-            color: CupertinoColors.systemGrey.withValues(alpha: 0.1),
+            color: m.Colors.black.withAlpha(15),
             blurRadius: 8,
             offset: const Offset(0, 2),
           ),
@@ -555,17 +629,20 @@ class _EnhancedPrinterSettingsScreenState extends ConsumerState<EnhancedPrinterS
           Row(
             children: [
               Expanded(
-                child: CupertinoButton.filled(
-                  onPressed: _selectedPrinter != null && !_isLoading ? _testPrint : null,
-                  child: const Text('اختبار الطباعة'),
+                child: AppButton.primary(
+                  text: 'اختبار الطباعة',
+                  onPressed: _selectedPrinter != null && !_isLoading
+                      ? _testPrint
+                      : null,
                 ),
               ),
               const SizedBox(width: 8),
               Expanded(
-                child: CupertinoButton(
-                  color: CupertinoColors.systemOrange,
-                  onPressed: _selectedPrinter != null && !_isLoading ? _testInvoicePrint : null,
-                  child: const Text('طباعة فاتورة تجريبية'),
+                child: AppButton.secondary(
+                  text: 'طباعة فاتورة تجريبية',
+                  onPressed: _selectedPrinter != null && !_isLoading
+                      ? _testInvoicePrint
+                      : null,
                 ),
               ),
             ],
@@ -573,10 +650,9 @@ class _EnhancedPrinterSettingsScreenState extends ConsumerState<EnhancedPrinterS
           const SizedBox(height: 12),
           SizedBox(
             width: double.infinity,
-            child: CupertinoButton(
-              color: CupertinoColors.systemGreen,
+            child: AppButton.primary(
+              text: 'حفظ الإعدادات',
               onPressed: _selectedPrinter != null ? _saveSettings : null,
-              child: const Text('حفظ الإعدادات'),
             ),
           ),
         ],
@@ -638,11 +714,13 @@ class _EnhancedPrinterSettingsScreenState extends ConsumerState<EnhancedPrinterS
     String connectionString = '';
     switch (_customType) {
       case PrinterType.network:
-        if (_customIpController.text.isEmpty || _customPortController.text.isEmpty) {
+        if (_customIpController.text.isEmpty ||
+            _customPortController.text.isEmpty) {
           _showError('خطأ', 'يرجى إدخال عنوان IP والمنفذ');
           return;
         }
-        connectionString = '${_customIpController.text}:${_customPortController.text}';
+        connectionString =
+            '${_customIpController.text}:${_customPortController.text}';
         break;
       case PrinterType.usb:
       case PrinterType.bluetooth:
@@ -715,24 +793,52 @@ class _EnhancedPrinterSettingsScreenState extends ConsumerState<EnhancedPrinterS
     setState(() => _isLoading = true);
 
     try {
-      final testInvoiceData = {
-        'storeName': 'متجر الجوهر للمجوهرات',
-        'storeAddress': 'شارع الجوهر، المدينة',
-        'storePhone': '+218-91-1234567',
-        'invoiceNumber': 'TEST-001',
-        'customerName': 'عميل تجريبي',
-        'items': [
-          {'name': 'خاتم ذهب 18 قيراط', 'quantity': 1, 'price': 250.0, 'total': 250.0},
-          {'name': 'سلسلة فضة', 'quantity': 2, 'price': 75.0, 'total': 150.0},
+      final testInvoiceData = InvoiceRenderData(
+        storeName: 'متجر الجوهر للمجوهرات',
+        storeAddress: 'شارع الجوهر، المدينة',
+        storePhone: '+218-91-1234567',
+        invoiceNumber: 'TEST-001',
+        customerName: 'عميل تجريبي',
+        items: [
+          CartItem(
+            item: Item(
+              sku: 'خاتم ذهب 18 قيراط',
+              categoryId: 1,
+              materialId: 1,
+              weightGrams: 10,
+              karat: 18,
+              workmanshipFee: 500,
+              costPrice: 2000,
+            ),
+            quantity: 1,
+            unitPrice: 250,
+          ),
+          CartItem(
+            item: Item(
+              sku: 'سلسلة فضة',
+              categoryId: 2,
+              materialId: 2,
+              weightGrams: 20,
+              karat: 0,
+              workmanshipFee: 100,
+              costPrice: 50,
+            ),
+            quantity: 2,
+            unitPrice: 75,
+          ),
         ],
-        'subtotal': 400.0,
-        'discount': 20.0,
-        'tax': 0.0,
-        'total': 380.0,
-        'paymentMethod': 'نقدي',
-      };
+        subtotal: 400.0,
+        discount: 20.0,
+        tax: 0.0,
+        total: 380.0,
+        paymentMethod: 'نقدي',
+        date: DateTime.now(),
+      );
 
-      final success = await _printerService.printInvoice(_selectedPrinter!, testInvoiceData);
+      final success = await _printerService.printInvoice(
+        _selectedPrinter!,
+        testInvoiceData,
+      );
       if (success) {
         _showMessage('نجح الاختبار', 'تم طباعة الفاتورة التجريبية بنجاح');
       } else {
@@ -745,11 +851,16 @@ class _EnhancedPrinterSettingsScreenState extends ConsumerState<EnhancedPrinterS
     }
   }
 
-  void _saveSettings() {
+  void _saveSettings() async {
     if (_selectedPrinter == null) return;
-    
-    // TODO: حفظ إعدادات الطابعة في SharedPreferences
-    _showMessage('تم الحفظ', 'تم حفظ إعدادات الطابعة بنجاح\n\nالطابعة المحددة: ${_selectedPrinter!.name}');
+
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('selected_printer_name', _selectedPrinter!.name);
+
+    _showMessage(
+      'تم الحفظ',
+      'تم حفظ إعدادات الطابعة بنجاح\n\nالطابعة المحددة: ${_selectedPrinter!.name}',
+    );
   }
 
   void _showMessage(String title, String message) {
@@ -782,11 +893,5 @@ class _EnhancedPrinterSettingsScreenState extends ConsumerState<EnhancedPrinterS
         ],
       ),
     );
-  }
-}
-
-extension on Iterable<PrinterInfo> {
-  PrinterInfo? get firstOrNull {
-    return isEmpty ? null : first;
   }
 }

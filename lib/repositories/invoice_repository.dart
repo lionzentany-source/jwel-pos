@@ -114,26 +114,70 @@ class InvoiceRepository extends BaseRepository<Invoice> {
   Future<List<Map<String, dynamic>>> getSalesStats({
     DateTime? startDate,
     DateTime? endDate,
+    int? categoryId,
+    PaymentMethod? paymentMethod,
+    ItemLocation? itemLocation,
   }) async {
-    String? where;
-    List<dynamic>? whereArgs;
-
-    if (startDate != null && endDate != null) {
-      where = 'created_at BETWEEN ? AND ?';
-      whereArgs = [startDate.toIso8601String(), endDate.toIso8601String()];
-    }
-
     final db = await database;
-    final result = await db.rawQuery(
-      'SELECT COUNT(*) as totalInvoices, SUM(total) as totalSales, AVG(total) as averageSale, SUM(discount) as totalDiscounts FROM invoices${where != null ? ' WHERE $where' : ''}',
-      whereArgs,
-    );
-    return result;
+    final List<String> cond = [];
+    final List<dynamic> args = [];
+    if (startDate != null && endDate != null) {
+      cond.add('created_at BETWEEN ? AND ?');
+      args
+        ..add(startDate.toIso8601String())
+        ..add(endDate.toIso8601String());
+    }
+    if (paymentMethod != null) {
+      cond.add('payment_method = ?');
+      args.add(paymentMethod.name);
+    }
+    String where = cond.isNotEmpty ? ' WHERE ${cond.join(' AND ')}' : '';
+    // category/location filters require join with invoice_items + items
+    if (categoryId != null || itemLocation != null) {
+      final jArgs = [...args];
+      final jWhere = where
+          .replaceAll('created_at', 'i.created_at')
+          .replaceAll('payment_method', 'i.payment_method');
+      final List<String> extras = [];
+      if (categoryId != null) {
+        extras.add('it.category_id = ?');
+        jArgs.add(categoryId);
+      }
+      if (itemLocation != null) {
+        extras.add('it.location = ?');
+        jArgs.add(itemLocation.name);
+      }
+      final result = await db.rawQuery('''
+        SELECT 
+          COUNT(*) as totalInvoices,
+          SUM(total) as totalSales,
+          AVG(total) as averageSale,
+          SUM(discount) as totalDiscounts
+        FROM (
+          SELECT DISTINCT i.id, i.total, i.discount
+          FROM invoices i
+          JOIN invoice_items ii ON ii.invoice_id = i.id
+          JOIN items it ON it.id = ii.item_id
+          ${jWhere.isNotEmpty ? jWhere : ''}
+          ${jWhere.isNotEmpty ? ' AND ' : ' WHERE '} ${extras.join(' AND ')}
+        ) d
+      ''', jArgs);
+      return result;
+    } else {
+      final result = await db.rawQuery(
+        'SELECT COUNT(*) as totalInvoices, SUM(total) as totalSales, AVG(total) as averageSale, SUM(discount) as totalDiscounts FROM invoices$where',
+        args.isEmpty ? null : args,
+      );
+      return result;
+    }
   }
 
   Future<List<Map<String, dynamic>>> getTopSellingItems({
     DateTime? startDate,
     DateTime? endDate,
+    int? categoryId,
+    PaymentMethod? paymentMethod,
+    ItemLocation? itemLocation,
   }) async {
     String? where;
     List<dynamic>? whereArgs;
@@ -141,6 +185,22 @@ class InvoiceRepository extends BaseRepository<Invoice> {
     if (startDate != null && endDate != null) {
       where = 'i.created_at BETWEEN ? AND ?';
       whereArgs = [startDate.toIso8601String(), endDate.toIso8601String()];
+    }
+    if (paymentMethod != null) {
+      where = where == null
+          ? 'i.payment_method = ?'
+          : '$where AND i.payment_method = ?';
+      (whereArgs ??= []).add(paymentMethod.name);
+    }
+    if (categoryId != null) {
+      where = where == null
+          ? 'it.category_id = ?'
+          : '$where AND it.category_id = ?';
+      (whereArgs ??= []).add(categoryId);
+    }
+    if (itemLocation != null) {
+      where = where == null ? 'it.location = ?' : '$where AND it.location = ?';
+      (whereArgs ??= []).add(itemLocation.name);
     }
 
     final db = await database;
@@ -165,12 +225,54 @@ class InvoiceRepository extends BaseRepository<Invoice> {
   Future<List<Invoice>> getInvoicesByDateRange({
     required DateTime startDate,
     required DateTime endDate,
+    int? categoryId,
+    PaymentMethod? paymentMethod,
+    ItemLocation? itemLocation,
   }) async {
-    final maps = await super.query(
-      where: 'created_at BETWEEN ? AND ?',
-      whereArgs: [startDate.toIso8601String(), endDate.toIso8601String()],
-      orderBy: 'created_at DESC',
-    );
-    return maps.map((map) => Invoice.fromMap(map)).toList();
+    final db = await database;
+    if (categoryId != null || itemLocation != null) {
+      final List<dynamic> args = [
+        startDate.toIso8601String(),
+        endDate.toIso8601String(),
+      ];
+      final String addPay = paymentMethod != null
+          ? ' AND i.payment_method = ?'
+          : '';
+      if (paymentMethod != null) args.add(paymentMethod.name);
+      final result = await db.rawQuery(
+        '''
+        SELECT DISTINCT i.*
+        FROM invoices i
+        JOIN invoice_items ii ON ii.invoice_id = i.id
+        JOIN items it ON it.id = ii.item_id
+        WHERE i.created_at BETWEEN ? AND ?$addPay
+          ${categoryId != null ? ' AND it.category_id = ?' : ''}
+          ${itemLocation != null ? ' AND it.location = ?' : ''}
+        ORDER BY i.created_at DESC
+      ''',
+        [
+          ...args,
+          if (categoryId != null) categoryId,
+          if (itemLocation != null) itemLocation.name,
+        ],
+      );
+      return result.map((e) => Invoice.fromMap(e)).toList();
+    } else {
+      String where = 'created_at BETWEEN ? AND ?';
+      final List<dynamic> whereArgs = [
+        startDate.toIso8601String(),
+        endDate.toIso8601String(),
+      ];
+      if (paymentMethod != null) {
+        where += ' AND payment_method = ?';
+        whereArgs.add(paymentMethod.name);
+      }
+      final maps = await super.query(
+        where: where,
+        whereArgs: whereArgs,
+        orderBy: 'created_at DESC',
+      );
+      return maps.map((map) => Invoice.fromMap(map)).toList();
+    }
   }
 }

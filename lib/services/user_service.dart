@@ -33,11 +33,21 @@ class UserService {
 
   final Map<String, List<UserRole>> _userPermissions = {
     'manage_inventory': [UserRole.admin, UserRole.manager],
-    'process_sales': [UserRole.admin, UserRole.manager, UserRole.cashier, UserRole.supervisor],
+    'process_sales': [
+      UserRole.admin,
+      UserRole.manager,
+      UserRole.cashier,
+      UserRole.supervisor,
+    ],
     'view_reports': [UserRole.admin, UserRole.manager, UserRole.supervisor],
     'manage_users': [UserRole.admin],
     'manage_settings': [UserRole.admin, UserRole.manager],
-    'view_customers': [UserRole.admin, UserRole.manager, UserRole.cashier, UserRole.supervisor],
+    'view_customers': [
+      UserRole.admin,
+      UserRole.manager,
+      UserRole.cashier,
+      UserRole.supervisor,
+    ],
     'manage_categories': [UserRole.admin, UserRole.manager],
     'manage_materials': [UserRole.admin, UserRole.manager],
     'backup_restore': [UserRole.admin],
@@ -61,7 +71,6 @@ class UserService {
       final user = await _userRepository.getUserByUsername(username);
       debugPrint("User from DB: ${user?.toMap()}");
       debugPrint("DB Password Hash: ${user?.password}");
-
 
       if (user != null && user.password == providedPasswordHash) {
         _currentUser = user;
@@ -326,12 +335,12 @@ class UserService {
     }
   }
 
-  /// Ensures that default users exist in the database.
+  /// Ensures that only the default admin user exists (created if missing).
   Future<void> _ensureAdminUserExists() async {
     final adminUser = await _userRepository.getUserByUsername('admin');
     if (adminUser == null) {
-      debugPrint("Creating default users...");
-      
+      debugPrint("Creating default admin user...");
+
       // حساب المدير الرئيسي
       final newAdmin = User(
         username: 'admin',
@@ -354,7 +363,9 @@ class UserService {
       throw Exception("Username must be between 3 and 20 characters.");
     }
     if (!RegExp(r'^[a-zA-Z0-9_]+$').hasMatch(username)) {
-      throw Exception("Username can only contain letters, numbers, and underscores.");
+      throw Exception(
+        "Username can only contain letters, numbers, and underscores.",
+      );
     }
   }
 

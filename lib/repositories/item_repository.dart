@@ -4,7 +4,7 @@ import '../services/database_service.dart';
 
 class ItemRepository extends BaseRepository<Item> {
   ItemRepository({DatabaseService? databaseService})
-      : super(databaseService ?? DatabaseService(), 'items');
+    : super(databaseService ?? DatabaseService(), 'items');
 
   @override
   Item fromMap(Map<String, dynamic> map) {
@@ -16,8 +16,12 @@ class ItemRepository extends BaseRepository<Item> {
     return obj.toMap();
   }
 
-  Future<List<Item>> getAllItems() async {
-    final maps = await super.query(orderBy: 'sku ASC');
+  Future<List<Item>> getAllItems({ItemLocation? location}) async {
+    final maps = await super.query(
+      orderBy: 'sku ASC',
+      where: location != null ? 'location = ?' : null,
+      whereArgs: location != null ? [location.name] : null,
+    );
     return maps.map((map) => Item.fromMap(map)).toList();
   }
 
@@ -51,11 +55,11 @@ class ItemRepository extends BaseRepository<Item> {
     if (maps.isEmpty) {
       return 'ITEM001';
     }
-    
+
     // البحث عن أكبر رقم SKU
     final allItems = await super.query();
     int maxNumber = 0;
-    
+
     for (final map in allItems) {
       final sku = map['sku'] as String;
       if (sku.startsWith('ITEM')) {
@@ -66,27 +70,46 @@ class ItemRepository extends BaseRepository<Item> {
         }
       }
     }
-    
+
     final nextNumber = maxNumber + 1;
     return 'ITEM${nextNumber.toString().padLeft(3, '0')}';
   }
 
-  Future<List<Item>> getItemsByCategoryId(int categoryId) async {
+  Future<List<Item>> getItemsByCategoryId(
+    int categoryId, {
+    ItemLocation? location,
+  }) async {
     final maps = await super.query(
-      where: 'category_id = ?',
-      whereArgs: [categoryId],
+      where: location != null
+          ? 'category_id = ? AND location = ?'
+          : 'category_id = ?',
+      whereArgs: location != null ? [categoryId, location.name] : [categoryId],
       orderBy: 'sku ASC',
     );
-    return maps.map((map) => Item.fromMap(map)).toList();
+    // If location filter provided, perform in-memory filter fallback (in case DB where didn't include it)
+    final list = maps.map((map) => Item.fromMap(map)).toList();
+    if (location != null) {
+      return list.where((i) => i.location == location).toList();
+    }
+    return list;
   }
 
-  Future<List<Item>> getItemsByMaterialId(int materialId) async {
+  Future<List<Item>> getItemsByMaterialId(
+    int materialId, {
+    ItemLocation? location,
+  }) async {
     final maps = await super.query(
-      where: 'material_id = ?',
-      whereArgs: [materialId],
+      where: location != null
+          ? 'material_id = ? AND location = ?'
+          : 'material_id = ?',
+      whereArgs: location != null ? [materialId, location.name] : [materialId],
       orderBy: 'sku ASC',
     );
-    return maps.map((map) => Item.fromMap(map)).toList();
+    final list = maps.map((map) => Item.fromMap(map)).toList();
+    if (location != null) {
+      return list.where((i) => i.location == location).toList();
+    }
+    return list;
   }
 
   Future<Item?> getItemByRfidTag(String rfidTag) async {
@@ -105,9 +128,11 @@ class ItemRepository extends BaseRepository<Item> {
     // التحقق من عدم وجود البطاقة مع صنف آخر
     final existingItem = await getItemByRfidTag(rfidTag);
     if (existingItem != null && existingItem.id != itemId) {
-      throw Exception('هذه البطاقة مربوطة بالفعل بصنف آخر: ${existingItem.sku}');
+      throw Exception(
+        'هذه البطاقة مربوطة بالفعل بصنف آخر: ${existingItem.sku}',
+      );
     }
-    
+
     final item = await getItemById(itemId);
     if (item != null) {
       // إنشاء نسخة جديدة من الصنف مع البطاقة والحالة المحدثة
@@ -136,7 +161,8 @@ class ItemRepository extends BaseRepository<Item> {
     // Assuming 'status' is a field in the Item model or can be derived
     // This is a placeholder, you'll need to define how 'status' is determined
     final maps = await super.query(
-      where: 'status = ?', // You might need to adjust this based on your Item model
+      where:
+          'status = ?', // You might need to adjust this based on your Item model
       whereArgs: [status],
       orderBy: 'sku ASC',
     );

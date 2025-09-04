@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:image_picker/image_picker.dart';
 
 import '../widgets/adaptive_scaffold.dart';
+import '../widgets/app_button.dart';
 import '../models/item.dart';
 import '../providers/item_provider.dart';
 import '../providers/category_provider.dart';
@@ -19,6 +20,50 @@ class EditItemScreen extends ConsumerStatefulWidget {
 }
 
 class _EditItemScreenState extends ConsumerState<EditItemScreen> {
+  void _showCategoryPicker(List<dynamic> categories) {
+    showCupertinoModalPopup(
+      context: context,
+      builder: (context) {
+        return CupertinoActionSheet(
+          title: const Text('اختر الفئة'),
+          actions: categories.map<Widget>((cat) {
+            return CupertinoActionSheetAction(
+              child: Text(cat.nameAr),
+              onPressed: () {
+                setState(() {
+                  _selectedCategoryId = cat.id;
+                });
+                Navigator.pop(context);
+              },
+            );
+          }).toList(),
+        );
+      },
+    );
+  }
+
+  void _showMaterialPicker(List<dynamic> materials) {
+    showCupertinoModalPopup(
+      context: context,
+      builder: (context) {
+        return CupertinoActionSheet(
+          title: const Text('اختر المادة'),
+          actions: materials.map<Widget>((mat) {
+            return CupertinoActionSheetAction(
+              child: Text(mat.nameAr),
+              onPressed: () {
+                setState(() {
+                  _selectedMaterialId = mat.id;
+                });
+                Navigator.pop(context);
+              },
+            );
+          }).toList(),
+        );
+      },
+    );
+  }
+
   final _formKey = GlobalKey<FormState>();
   final _skuController = TextEditingController();
   final _weightController = TextEditingController();
@@ -29,6 +74,7 @@ class _EditItemScreenState extends ConsumerState<EditItemScreen> {
 
   int? _selectedCategoryId;
   int? _selectedMaterialId;
+  ItemLocation _selectedLocation = ItemLocation.warehouse;
   String? _imagePath;
   bool _isLoading = false;
 
@@ -47,6 +93,7 @@ class _EditItemScreenState extends ConsumerState<EditItemScreen> {
     _costPriceController.text = widget.item.costPrice.toString();
     _selectedCategoryId = widget.item.categoryId;
     _selectedMaterialId = widget.item.materialId;
+    _selectedLocation = widget.item.location;
     _imagePath = widget.item.imagePath;
   }
 
@@ -68,13 +115,14 @@ class _EditItemScreenState extends ConsumerState<EditItemScreen> {
 
     return AdaptiveScaffold(
       title: 'تعديل الصنف',
+      showBackButton: false,
       actions: [
-        CupertinoButton(
-          padding: EdgeInsets.zero,
-          onPressed: _isLoading ? null : _saveItem,
-          child: _isLoading
-              ? const CupertinoActivityIndicator()
-              : const Text('حفظ'),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 8.0),
+          child: AppButton.primary(
+            text: 'حفظ',
+            onPressed: _isLoading ? null : _saveItem,
+          ),
         ),
       ],
       body: Form(
@@ -124,7 +172,8 @@ class _EditItemScreenState extends ConsumerState<EditItemScreen> {
                     controller: _weightController,
                     label: 'الوزن (جرام)',
                     keyboardType: TextInputType.number,
-                    validator: (value) => value?.isEmpty == true ? 'مطلوب' : null,
+                    validator: (value) =>
+                        value?.isEmpty == true ? 'مطلوب' : null,
                   ),
                 ),
                 const SizedBox(width: 16),
@@ -133,7 +182,8 @@ class _EditItemScreenState extends ConsumerState<EditItemScreen> {
                     controller: _karatController,
                     label: 'العيار',
                     keyboardType: TextInputType.number,
-                    validator: (value) => value?.isEmpty == true ? 'مطلوب' : null,
+                    validator: (value) =>
+                        value?.isEmpty == true ? 'مطلوب' : null,
                   ),
                 ),
               ],
@@ -148,7 +198,8 @@ class _EditItemScreenState extends ConsumerState<EditItemScreen> {
                     controller: _workmanshipController,
                     label: 'المصنعية (د.ل)',
                     keyboardType: TextInputType.number,
-                    validator: (value) => value?.isEmpty == true ? 'مطلوب' : null,
+                    validator: (value) =>
+                        value?.isEmpty == true ? 'مطلوب' : null,
                   ),
                 ),
                 const SizedBox(width: 16),
@@ -169,6 +220,8 @@ class _EditItemScreenState extends ConsumerState<EditItemScreen> {
               label: 'سعر التكلفة (د.ل)',
               keyboardType: TextInputType.number,
             ),
+            const SizedBox(height: 16),
+            _buildLocationPicker(),
           ],
         ),
       ),
@@ -233,10 +286,7 @@ class _EditItemScreenState extends ConsumerState<EditItemScreen> {
       children: [
         Text(
           label,
-          style: const TextStyle(
-            fontSize: 16,
-            fontWeight: FontWeight.w600,
-          ),
+          style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
         ),
         const SizedBox(height: 8),
         CupertinoTextFormFieldRow(
@@ -341,147 +391,78 @@ class _EditItemScreenState extends ConsumerState<EditItemScreen> {
       _isLoading = true;
     });
 
-    try {
-      final updatedItem = Item(
-        id: widget.item.id,
-        sku: _skuController.text.trim(),
-        categoryId: _selectedCategoryId ?? widget.item.categoryId,
-        materialId: _selectedMaterialId ?? widget.item.materialId,
-        weightGrams: double.parse(_weightController.text),
-        karat: int.parse(_karatController.text),
-        workmanshipFee: double.parse(_workmanshipController.text),
-        stonePrice: double.parse(_stonePriceController.text.isEmpty ? '0' : _stonePriceController.text),
-        costPrice: double.parse(_costPriceController.text.isEmpty ? '0' : _costPriceController.text),
-        imagePath: _imagePath,
-        rfidTag: widget.item.rfidTag,
-        status: widget.item.status,
-        createdAt: widget.item.createdAt,
-      );
+    final updatedItem = Item(
+      id: widget.item.id,
+      sku: _skuController.text.trim(),
+      categoryId: _selectedCategoryId ?? widget.item.categoryId,
+      materialId: _selectedMaterialId ?? widget.item.materialId,
+      weightGrams: double.parse(_weightController.text),
+      karat: int.parse(_karatController.text),
+      workmanshipFee: double.parse(_workmanshipController.text),
+      stonePrice: double.parse(
+        _stonePriceController.text.isEmpty ? '0' : _stonePriceController.text,
+      ),
+      costPrice: double.parse(
+        _costPriceController.text.isEmpty ? '0' : _costPriceController.text,
+      ),
+      imagePath: _imagePath,
+      rfidTag: widget.item.rfidTag,
+      status: widget.item.status,
+      location: _selectedLocation,
+      createdAt: widget.item.createdAt,
+    );
 
-      await ref.read(itemNotifierProvider.notifier).updateItem(updatedItem);
+    await ref.read(itemNotifierProvider.notifier).updateItem(updatedItem);
 
-      if (mounted) {
-        Navigator.pop(context);
-        showCupertinoDialog(
-          context: context,
-          builder: (context) => CupertinoAlertDialog(
-            title: const Text('تم بنجاح'),
-            content: const Text('تم تحديث الصنف بنجاح'),
-            actions: [
-              CupertinoDialogAction(
-                child: const Text('موافق'),
-                onPressed: () => Navigator.pop(context),
-              ),
-            ],
-          ),
-        );
-      }
-    } catch (error) {
-      if (mounted) {
-        showCupertinoDialog(
-          context: context,
-          builder: (context) => CupertinoAlertDialog(
-            title: const Text('خطأ'),
-            content: Text('حدث خطأ أثناء تحديث الصنف: $error'),
-            actions: [
-              CupertinoDialogAction(
-                child: const Text('موافق'),
-                onPressed: () => Navigator.pop(context),
-              ),
-            ],
-          ),
-        );
-      }
-    } finally {
-      if (mounted) {
-        setState(() {
-          _isLoading = false;
-        });
-      }
+    if (mounted) {
+      Navigator.pop(context);
     }
   }
 
-  void _showCategoryPicker(List<dynamic> categories) {
-    showCupertinoModalPopup(
-      context: context,
-      builder: (context) => Container(
-        height: 250,
-        color: CupertinoColors.systemBackground,
-        child: Column(
-          children: [
-            Container(
-              padding: const EdgeInsets.all(16),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  CupertinoButton(
-                    onPressed: () => Navigator.pop(context),
-                    child: const Text('إلغاء'),
-                  ),
-                  const Text('اختر الفئة', style: TextStyle(fontWeight: FontWeight.w600)),
-                  CupertinoButton(
-                    onPressed: () => Navigator.pop(context),
-                    child: const Text('تم'),
-                  ),
-                ],
-              ),
-            ),
-            Expanded(
-              child: CupertinoPicker(
-                itemExtent: 32,
-                onSelectedItemChanged: (index) {
-                  setState(() {
-                    _selectedCategoryId = categories[index].id;
-                  });
-                },
-                children: categories.map((category) => Text(category.nameAr)).toList(),
-              ),
-            ),
-          ],
-        ),
-      ),
+  Widget _buildLocationPicker() {
+    final labelStyle = const TextStyle(
+      fontSize: 16,
+      fontWeight: FontWeight.w600,
     );
-  }
-
-  void _showMaterialPicker(List<dynamic> materials) {
-    showCupertinoModalPopup(
-      context: context,
-      builder: (context) => Container(
-        height: 250,
-        color: CupertinoColors.systemBackground,
-        child: Column(
-          children: [
-            Container(
-              padding: const EdgeInsets.all(16),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  CupertinoButton(
-                    onPressed: () => Navigator.pop(context),
-                    child: const Text('إلغاء'),
-                  ),
-                  const Text('اختر المادة', style: TextStyle(fontWeight: FontWeight.w600)),
-                  CupertinoButton(
-                    onPressed: () => Navigator.pop(context),
-                    child: const Text('تم'),
-                  ),
-                ],
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text('مكان الصنف', style: labelStyle),
+        const SizedBox(height: 8),
+        CupertinoButton(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          color: CupertinoColors.systemGrey6,
+          borderRadius: BorderRadius.circular(8),
+          onPressed: () {
+            showCupertinoModalPopup(
+              context: context,
+              builder: (_) => CupertinoActionSheet(
+                title: const Text('اختر المكان'),
+                actions: ItemLocation.values.map((loc) {
+                  return CupertinoActionSheetAction(
+                    onPressed: () {
+                      setState(() => _selectedLocation = loc);
+                      Navigator.pop(context);
+                    },
+                    child: Text(loc.displayName),
+                  );
+                }).toList(),
+                cancelButton: CupertinoActionSheetAction(
+                  onPressed: () => Navigator.pop(context),
+                  child: const Text('إلغاء'),
+                ),
               ),
-            ),
-            Expanded(
-              child: CupertinoPicker(
-                itemExtent: 32,
-                onSelectedItemChanged: (index) {
-                  setState(() {
-                    _selectedMaterialId = materials[index].id;
-                  });
-                },
-                children: materials.map((material) => Text(material.nameAr)).toList(),
-              ),
-            ),
-          ],
+            );
+          },
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(_selectedLocation.displayName),
+              const Icon(CupertinoIcons.chevron_down),
+            ],
+          ),
         ),
-      ),
+      ],
     );
   }
 }

@@ -45,7 +45,10 @@ class CartNotifier extends StateNotifier<Cart> {
         );
         if (mat.isVariable) materialPrice = mat.pricePerGram;
       });
-      final unitPrice = item.calculateTotalPrice(goldPrice, materialSpecificPrice: materialPrice);
+      final unitPrice = item.calculateTotalPrice(
+        goldPrice,
+        materialSpecificPrice: materialPrice,
+      );
 
       _addItem(item, unitPrice);
       return true;
@@ -155,7 +158,10 @@ class CartNotifier extends StateNotifier<Cart> {
         );
         if (mat.isVariable) materialPrice = mat.pricePerGram;
       });
-      final unitPrice = foundItem.calculateTotalPrice(goldPrice, materialSpecificPrice: materialPrice);
+      final unitPrice = foundItem.calculateTotalPrice(
+        goldPrice,
+        materialSpecificPrice: materialPrice,
+      );
       _addItem(foundItem, unitPrice);
 
       debugPrint(
@@ -224,7 +230,10 @@ class CartNotifier extends StateNotifier<Cart> {
           );
           if (mat.isVariable) materialPrice = mat.pricePerGram;
         });
-        final unitPrice = item.calculateTotalPrice(goldPrice, materialSpecificPrice: materialPrice);
+        final unitPrice = item.calculateTotalPrice(
+          goldPrice,
+          materialSpecificPrice: materialPrice,
+        );
         _addItem(item, unitPrice);
         addedCount++;
         debugPrint(

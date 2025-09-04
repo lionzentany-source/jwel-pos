@@ -8,7 +8,8 @@ class AdvancedReportsScreen extends ConsumerStatefulWidget {
   const AdvancedReportsScreen({super.key});
 
   @override
-  ConsumerState<AdvancedReportsScreen> createState() => _AdvancedReportsScreenState();
+  ConsumerState<AdvancedReportsScreen> createState() =>
+      _AdvancedReportsScreenState();
 }
 
 class _AdvancedReportsScreenState extends ConsumerState<AdvancedReportsScreen> {
@@ -16,45 +17,38 @@ class _AdvancedReportsScreenState extends ConsumerState<AdvancedReportsScreen> {
   DateTime _startDate = DateTime.now().subtract(const Duration(days: 30));
   DateTime _endDate = DateTime.now();
 
-
   @override
   Widget build(BuildContext context) {
-    return AdaptiveScaffold(
-      title: 'التقارير المتقدمة',
-      actions: [
-        CupertinoButton(
-          padding: EdgeInsets.zero,
-          onPressed: _showDateRangePicker,
-          child: const Icon(CupertinoIcons.calendar),
-        ),
-      ],
-      body: SingleChildScrollView(
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            _buildDateRangeCard(),
-            const SizedBox(height: 16),
-            _buildReportCategoriesGrid(),
-          ],
+    return Container(
+      color: Color(0xfff6f8fa), // خلفية موحدة
+      child: AdaptiveScaffold(
+        title: 'التقارير المتقدمة',
+        actions: [
+          CupertinoButton(
+            padding: EdgeInsets.zero,
+            onPressed: _showDateRangePicker,
+            child: const Icon(
+              CupertinoIcons.calendar,
+              color: Color(0xff0078D4),
+            ),
+          ),
+        ],
+        body: SingleChildScrollView(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              _buildDateRangeCard(),
+              const SizedBox(height: 16),
+              _buildReportCategoriesGrid(),
+            ],
+          ),
         ),
       ),
     );
   }
 
   Widget _buildDateRangeCard() {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: CupertinoColors.systemBackground,
-        borderRadius: BorderRadius.circular(12),
-        boxShadow: [
-          BoxShadow(
-            color: CupertinoColors.systemGrey.withValues(alpha: 0.1),
-            blurRadius: 8,
-            offset: const Offset(0, 2),
-          ),
-        ],
-      ),
+    return AdaptiveCard(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -126,17 +120,11 @@ class _AdvancedReportsScreenState extends ConsumerState<AdvancedReportsScreen> {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Text(
-              reportType.icon,
-              style: const TextStyle(fontSize: 32),
-            ),
+            Text(reportType.icon, style: const TextStyle(fontSize: 32)),
             const SizedBox(height: 12),
             Text(
               reportType.displayName,
-              style: const TextStyle(
-                fontSize: 16,
-                fontWeight: FontWeight.w600,
-              ),
+              style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
               textAlign: TextAlign.center,
             ),
             const SizedBox(height: 8),
@@ -375,7 +363,9 @@ class _ProfitabilityReportModal extends StatelessWidget {
           Container(
             padding: const EdgeInsets.all(16),
             decoration: const BoxDecoration(
-              border: Border(bottom: BorderSide(color: CupertinoColors.separator)),
+              border: Border(
+                bottom: BorderSide(color: CupertinoColors.separator),
+              ),
             ),
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -397,20 +387,39 @@ class _ProfitabilityReportModal extends StatelessWidget {
               padding: const EdgeInsets.all(16),
               child: Column(
                 children: [
-                  _buildProfitCard('إجمالي الإيرادات', data.totalRevenue, CupertinoColors.activeGreen),
+                  _buildProfitCard(
+                    'إجمالي الإيرادات',
+                    data.totalRevenue,
+                    CupertinoColors.activeGreen,
+                  ),
                   const SizedBox(height: 12),
-                  _buildProfitCard('إجمالي التكاليف', data.totalCost, CupertinoColors.systemRed),
+                  _buildProfitCard(
+                    'إجمالي التكاليف',
+                    data.totalCost,
+                    CupertinoColors.systemRed,
+                  ),
                   const SizedBox(height: 12),
-                  _buildProfitCard('صافي الربح', data.grossProfit, CupertinoColors.activeBlue),
+                  _buildProfitCard(
+                    'صافي الربح',
+                    data.grossProfit,
+                    CupertinoColors.activeBlue,
+                  ),
                   const SizedBox(height: 12),
-                  _buildProfitCard('هامش الربح', data.profitMargin, CupertinoColors.systemOrange, isPercentage: true),
+                  _buildProfitCard(
+                    'هامش الربح',
+                    data.profitMargin,
+                    CupertinoColors.systemOrange,
+                    isPercentage: true,
+                  ),
                   const SizedBox(height: 20),
                   const Text(
                     'الربحية حسب الفئة',
                     style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
                   ),
                   const SizedBox(height: 12),
-                  ...data.categoryProfits.map((cp) => _buildCategoryProfitRow(cp)),
+                  ...data.categoryProfits.map(
+                    (cp) => _buildCategoryProfitRow(cp),
+                  ),
                 ],
               ),
             ),
@@ -420,7 +429,12 @@ class _ProfitabilityReportModal extends StatelessWidget {
     );
   }
 
-  Widget _buildProfitCard(String label, double value, Color color, {bool isPercentage = false}) {
+  Widget _buildProfitCard(
+    String label,
+    double value,
+    Color color, {
+    bool isPercentage = false,
+  }) {
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
@@ -433,7 +447,9 @@ class _ProfitabilityReportModal extends StatelessWidget {
         children: [
           Text(label, style: const TextStyle(fontWeight: FontWeight.w500)),
           Text(
-            isPercentage ? '${value.toStringAsFixed(1)}%' : '${value.toStringAsFixed(2)} د.ل',
+            isPercentage
+                ? '${value.toStringAsFixed(1)}%'
+                : '${value.toStringAsFixed(2)} د.ل',
             style: TextStyle(
               fontSize: 18,
               fontWeight: FontWeight.bold,
@@ -499,7 +515,9 @@ class _TrendAnalysisModal extends StatelessWidget {
           Container(
             padding: const EdgeInsets.all(16),
             decoration: const BoxDecoration(
-              border: Border(bottom: BorderSide(color: CupertinoColors.separator)),
+              border: Border(
+                bottom: BorderSide(color: CupertinoColors.separator),
+              ),
             ),
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -550,15 +568,18 @@ class _TrendAnalysisModal extends StatelessWidget {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              const Text('الاتجاه العام:', style: TextStyle(fontWeight: FontWeight.w500)),
+              const Text(
+                'الاتجاه العام:',
+                style: TextStyle(fontWeight: FontWeight.w500),
+              ),
               Text(
                 data.trend,
                 style: TextStyle(
                   fontWeight: FontWeight.bold,
-                  color: data.trend == 'متزايد' 
-                    ? CupertinoColors.activeGreen 
-                    : data.trend == 'متناقص' 
-                      ? CupertinoColors.systemRed 
+                  color: data.trend == 'متزايد'
+                      ? CupertinoColors.activeGreen
+                      : data.trend == 'متناقص'
+                      ? CupertinoColors.systemRed
                       : CupertinoColors.systemOrange,
                 ),
               ),
@@ -568,15 +589,18 @@ class _TrendAnalysisModal extends StatelessWidget {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              const Text('معدل النمو:', style: TextStyle(fontWeight: FontWeight.w500)),
+              const Text(
+                'معدل النمو:',
+                style: TextStyle(fontWeight: FontWeight.w500),
+              ),
               Text(
                 '${data.growthRate.toStringAsFixed(1)}%',
                 style: TextStyle(
                   fontWeight: FontWeight.bold,
-                  color: data.growthRate > 0 
-                    ? CupertinoColors.activeGreen 
-                    : data.growthRate < 0 
-                      ? CupertinoColors.systemRed 
+                  color: data.growthRate > 0
+                      ? CupertinoColors.activeGreen
+                      : data.growthRate < 0
+                      ? CupertinoColors.systemRed
                       : CupertinoColors.systemOrange,
                 ),
               ),
@@ -603,7 +627,10 @@ class _TrendAnalysisModal extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.end,
             children: [
               Text('${ms.sales.toStringAsFixed(2)} د.ل'),
-              Text('${ms.invoiceCount} فاتورة', style: const TextStyle(fontSize: 12)),
+              Text(
+                '${ms.invoiceCount} فاتورة',
+                style: const TextStyle(fontSize: 12),
+              ),
             ],
           ),
         ],
@@ -630,7 +657,9 @@ class _TopCustomersModal extends StatelessWidget {
           Container(
             padding: const EdgeInsets.all(16),
             decoration: const BoxDecoration(
-              border: Border(bottom: BorderSide(color: CupertinoColors.separator)),
+              border: Border(
+                bottom: BorderSide(color: CupertinoColors.separator),
+              ),
             ),
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -755,7 +784,9 @@ class _PaymentMethodsModal extends StatelessWidget {
           Container(
             padding: const EdgeInsets.all(16),
             decoration: const BoxDecoration(
-              border: Border(bottom: BorderSide(color: CupertinoColors.separator)),
+              border: Border(
+                bottom: BorderSide(color: CupertinoColors.separator),
+              ),
             ),
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -789,7 +820,11 @@ class _PaymentMethodsModal extends StatelessWidget {
     );
   }
 
-  Widget _buildPaymentMethodRow(String method, double amount, double percentage) {
+  Widget _buildPaymentMethodRow(
+    String method,
+    double amount,
+    double percentage,
+  ) {
     return Container(
       padding: const EdgeInsets.all(16),
       margin: const EdgeInsets.only(bottom: 12),
@@ -802,10 +837,7 @@ class _PaymentMethodsModal extends StatelessWidget {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Text(
-                method,
-                style: const TextStyle(fontWeight: FontWeight.w600),
-              ),
+              Text(method, style: const TextStyle(fontWeight: FontWeight.w600)),
               Text(
                 '${amount.toStringAsFixed(2)} د.ل',
                 style: const TextStyle(
@@ -865,7 +897,9 @@ class _InventoryAnalysisModal extends StatelessWidget {
           Container(
             padding: const EdgeInsets.all(16),
             decoration: const BoxDecoration(
-              border: Border(bottom: BorderSide(color: CupertinoColors.separator)),
+              border: Border(
+                bottom: BorderSide(color: CupertinoColors.separator),
+              ),
             ),
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -916,31 +950,52 @@ class _InventoryAnalysisModal extends StatelessWidget {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              const Text('إجمالي الأصناف:', style: TextStyle(fontWeight: FontWeight.w500)),
-              Text('${data['totalItems']}', style: const TextStyle(fontWeight: FontWeight.bold)),
+              const Text(
+                'إجمالي الأصناف:',
+                style: TextStyle(fontWeight: FontWeight.w500),
+              ),
+              Text(
+                '${data['totalItems']}',
+                style: const TextStyle(fontWeight: FontWeight.bold),
+              ),
             ],
           ),
           const SizedBox(height: 8),
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              const Text('المباع:', style: TextStyle(fontWeight: FontWeight.w500)),
-              Text('${data['soldItems']}', style: const TextStyle(fontWeight: FontWeight.bold)),
+              const Text(
+                'المباع:',
+                style: TextStyle(fontWeight: FontWeight.w500),
+              ),
+              Text(
+                '${data['soldItems']}',
+                style: const TextStyle(fontWeight: FontWeight.bold),
+              ),
             ],
           ),
           const SizedBox(height: 8),
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              const Text('في المخزون:', style: TextStyle(fontWeight: FontWeight.w500)),
-              Text('${data['inStockItems']}', style: const TextStyle(fontWeight: FontWeight.bold)),
+              const Text(
+                'في المخزون:',
+                style: TextStyle(fontWeight: FontWeight.w500),
+              ),
+              Text(
+                '${data['inStockItems']}',
+                style: const TextStyle(fontWeight: FontWeight.bold),
+              ),
             ],
           ),
           const SizedBox(height: 8),
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              const Text('معدل الدوران:', style: TextStyle(fontWeight: FontWeight.w500)),
+              const Text(
+                'معدل الدوران:',
+                style: TextStyle(fontWeight: FontWeight.w500),
+              ),
               Text(
                 '${(data['turnoverRate'] * 100).toStringAsFixed(1)}%',
                 style: const TextStyle(fontWeight: FontWeight.bold),
@@ -953,12 +1008,13 @@ class _InventoryAnalysisModal extends StatelessWidget {
   }
 
   List<Widget> _buildCategoryAnalysis() {
-    final categoryAnalysis = data['categoryAnalysis'] as Map<String, Map<String, dynamic>>;
-    
+    final categoryAnalysis =
+        data['categoryAnalysis'] as Map<String, Map<String, dynamic>>;
+
     return categoryAnalysis.entries.map((entry) {
       final categoryName = entry.key;
       final categoryData = entry.value;
-      
+
       return Container(
         padding: const EdgeInsets.all(12),
         margin: const EdgeInsets.only(bottom: 8),
